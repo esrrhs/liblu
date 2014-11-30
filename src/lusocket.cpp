@@ -1,6 +1,35 @@
 #include "lusocket.h"
 #ifdef WIN32
 #include <windows.h>
+#else
+#include <sys/types.h>          /* See NOTES */
+#include <sys/socket.h>
+#include <execinfo.h>
+#include <signal.h>
+#include <exception>
+#include <setjmp.h>
+#include <pthread.h>
+#include <errno.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <linux/limits.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/epoll.h>
+#include <sys/mman.h>
+#include <malloc.h>
+#include <sys/ptrace.h>
+#include <sys/wait.h>
+#include <sys/syscall.h> 
+#include <sys/reg.h>
+#include <sys/user.h>
 #endif
 
 lutcpserver * newtcpserver(lu * l)
@@ -37,7 +66,7 @@ lutcpserver * newtcpserver(lu * l)
 	if (ret != 0)
 	{
 		LUERR("bind socket error");
-		return false;
+		return ts;
 	}
 
 	// listen
@@ -45,14 +74,14 @@ lutcpserver * newtcpserver(lu * l)
 	if (ret != 0)
 	{
 		LUERR("listen socket error");
-		return false;
+		return ts;
 	}
 
 	// ·Ç×èÈû
 	if (!set_socket_nonblocking(ts->s, l->cfg.isnonblocking))
 	{
 		LUERR("set nonblocking socket error");
-		return false;
+		return ts;
 	}
 
 	return ts;
