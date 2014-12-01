@@ -55,7 +55,7 @@ LU_API void dellu(lu * l)
 	l->cfg.luf(l);
 }
 
-void inilu()
+LU_API void inilu()
 {
 	// socket
 #ifdef WIN32
@@ -72,4 +72,19 @@ void inilu()
 #endif
 }
 
+LU_API void ticklu(lu * l)
+{
+	if (l->type == lut_tcpserver)
+	{
+		ticktcpserver(l->ts);
+	}
+	else if (l->type == lut_tcpclient)
+	{
+		ticktcpclient(l->tc);
+	}
+	else
+	{
+		LUERR("error type %d", l->type);
+	}
+}
 

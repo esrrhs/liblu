@@ -28,8 +28,15 @@
 
 void lulog(const char * header, const char * file, const char * func, int pos, const char *fmt, ...);
 
-typedef	int32_t socket_t;
+typedef	int socket_t;
 #if defined(WIN32)
-typedef int32_t socklen_t;
+typedef int socklen_t;
 #else
 #endif
+
+#define LUMIN(a, b) ((a) < (b) ? (a) : (b))
+
+struct lu;
+void * safelumalloc(lu * l, size_t len);
+void safelufree(lu * l, void * p);
+

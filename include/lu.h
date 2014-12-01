@@ -36,7 +36,8 @@ struct luconfig
 {
     luconfig() : lum(&malloc), luf(&free), type(lut_tcpserver),
 		port(8888), isreconnect(true), maxconnnum(1000),
-		backlog(128), isnonblocking(true), sendbuff(1024*1024), recvbuff(1024*1024)
+		backlog(128), isnonblocking(true), sendbuff(1024*1024), recvbuff(1024*1024),
+		waittimeout(1)
     {
 		strcpy(ip, "127.0.0.1");
 	}
@@ -59,6 +60,8 @@ struct luconfig
 	// 发送接收缓冲区
 	int sendbuff;
 	int recvbuff;
+	// select超时时间
+	int waittimeout;
 };
 
 // 初始化
@@ -67,3 +70,7 @@ LU_API void inilu();
 // 申请回收
 LU_API lu * newlu(luconfig * cfg = 0);
 LU_API void dellu(lu * l);
+
+// 心跳
+LU_API void ticklu(lu * l);
+
