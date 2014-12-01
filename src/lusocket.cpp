@@ -34,7 +34,7 @@
 
 lutcpserver * newtcpserver(lu * l)
 {
-	lutcpserver * ts = (lutcpserver *)l->lum(sizeof(lutcpserver));
+	lutcpserver * ts = (lutcpserver *)safelumalloc(l, sizeof(lutcpserver));
 	memset(ts, 0, sizeof(lutcpserver));
 	ts->l = l;
 	ts->s = -1;
@@ -46,7 +46,8 @@ lutcpserver * newtcpserver(lu * l)
 	if (ts->s == -1)
 	{
 		LUERR("create socket error");
-		return ts;
+		safelufree(l, ts);
+		return 0;
 	}
 
 	// bind
@@ -66,7 +67,8 @@ lutcpserver * newtcpserver(lu * l)
 	if (ret != 0)
 	{
 		LUERR("bind socket error");
-		return ts;
+		safelufree(l, ts);
+		return 0;
 	}
 
 	// listen
@@ -74,15 +76,29 @@ lutcpserver * newtcpserver(lu * l)
 	if (ret != 0)
 	{
 		LUERR("listen socket error");
-		return ts;
+		safelufree(l, ts);
+		return 0;
 	}
 
 	// 非阻塞
 	if (!set_socket_nonblocking(ts->s, l->cfg.isnonblocking))
 	{
 		LUERR("set nonblocking socket error");
-		return ts;
+		safelufree(l, ts);
+		return 0;
 	}
+
+    // 建立link
+    ts->ltlsnum = l->cfg.maxconnnum + 1;
+    ts->ltls = (lutcplink *)safelumalloc(l, sizeof(lutcplink) * ts->ltlsnum);
+	memset(ts->ltls, 0, sizeof(sizeof(lutcplink) * ts->ltlsnum));
+    for (int i = 0; i < (int)ts->ltlsnum; i++)
+    {
+        ts->ltls[i].clear();
+    }
+
+    // 建立selector
+    ts->ls.ini(l, ts->ltlsnum, l->cfg.waittimeout, 0, 0, 0);
 
 	return ts;
 }
@@ -140,4 +156,132 @@ void close_socket(socket_t s)
 #endif
 	}
 }
+
+void ticktcpserver(lutcpserver * lts)
+{
+    
+}
+
+void ticktcpclient(lutcpclient * ltc)
+{
+}
+
+void lutcplink::clear()
+{
+    s = -1;
+    sendbuff.clear();
+    recvbuff.clear();
+    sendpacket = 0;
+    recvpacket = 0;
+    sendbytes = 0;
+    recvbytes = 0;
+    processtime = 0;
+}
+
+void luselector::ini(lu * _l, size_t _len, int _waittime, 
+        cb_link_err _cbe, 
+        cb_link_in _cbi, 
+        cb_link_out _cbo)
+{
+    l = _l;
+    len = _len;
+    waittime = _waittime;
+    cbe = _cbe;
+    cbi = _cbi;
+    cbo = _cbo;
+#ifdef WIN32
+#else
+    epollfd = ::epoll_create(len);
+    events = (epoll_event *)safelumalloc(l, sizeof(epoll_event) * len);
+#endif
+}
+
+void luselector::fini()
+{
+#ifdef WIN32
+#else
+    ::close(epollfd);
+    safelufree(l, events);
+    epollfd = -1;
+    events = 0;
+#endif
+}
+
+bool luselector::add(lutcplink * ltl)
+{
+#ifdef WIN32
+#else
+	epoll_event ev;
+	ev.events = EPOLLIN | EPOLLOUT | EPOLLERR;
+	ev.data.ptr = ltl;
+	if (::epoll_ctl(epollfd, EPOLL_CTL_ADD, ltl->s, &ev) != 0) 
+	{
+	    assert(0);
+	    return false;
+	}
+    return true;
+#endif
+}
+
+bool luselector::del(lutcplink * ltl)
+{
+#ifdef WIN32
+#else
+    ::close(ltl->s);
+	if (::epoll_ctl(epollfd, EPOLL_CTL_DEL, ltl->s, 0) == -1) 
+	{
+	    assert(0);
+		return false;
+	}
+	return true;
+#endif
+}
+
+bool luselector::select()
+{   
+#ifdef WIN32
+#else
+    int ret = ::epoll_wait(epollfd, events, len, waittime);
+	if (ret < 0)
+	{
+		if(EINTR == errno)
+		{
+			return true;
+		}
+		assert(0);
+		return false;
+	}
+
+    for(int i = 0; i < ret; i++)
+	{
+	    epoll_event & ev = events[i];
+	    lutcplink * ltl = (lutcplink *)ev.data.ptr;
+	    if(EPOLLERR & ev.events)
+	    {
+	        if (cbe)
+	        {
+	            cbe(ltl);
+	        }
+	        del(ltl);
+	    }
+	    if(EPOLLIN & ev.events)
+	    {
+	        if (cbi && cbi(ltl) != 0)
+	        {
+	            del(ltl);
+	        }
+	    }
+	    if(EPOLLOUT & ev.events)
+	    {
+	        if (cbo && cbo(ltl) != 0)
+	        {
+	            del(ltl);
+	        }
+	    }
+    }
+    
+	return true;
+#endif
+}
+
 
