@@ -1,4 +1,6 @@
 #include "lutypes.h"
+#include "lu.h"
+#include "lusocket.h"
 
 void lulog(const char * header, const char * file, const char * func, int pos, const char *fmt, ...)
 {
@@ -28,3 +30,21 @@ void lulog(const char * header, const char * file, const char * func, int pos, c
 
 	fclose(pLog);
 }
+
+void * safelumalloc(lu * l, size_t len)
+{
+    if (len > 0)
+    {
+        return l->lum(len);
+    }
+    return 0;
+}
+
+void safelufree(lu * l, void * p)
+{
+    if (p)
+    {
+        l->luf(p);
+    }
+}
+
