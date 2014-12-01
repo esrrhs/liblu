@@ -190,6 +190,8 @@ void luselector::ini(lu * _l, size_t _len, int _waittime,
     cbi = _cbi;
     cbo = _cbo;
 #ifdef WIN32
+	ltlmap = (lutcplinkmap *)safelumalloc(l, sizeof(lutcplinkmap));
+	new (ltlmap)lutcplinkmap();
 #else
     epollfd = ::epoll_create(len);
     events = (epoll_event *)safelumalloc(l, sizeof(epoll_event) * len);
@@ -199,6 +201,8 @@ void luselector::ini(lu * _l, size_t _len, int _waittime,
 void luselector::fini()
 {
 #ifdef WIN32
+	ltlmap->~lutcplinkmap();
+	safelufree(l, ltlmap);
 #else
     ::close(epollfd);
     safelufree(l, events);
@@ -210,6 +214,7 @@ void luselector::fini()
 bool luselector::add(lutcplink * ltl)
 {
 #ifdef WIN32
+	return true;
 #else
 	epoll_event ev;
 	ev.events = EPOLLIN | EPOLLOUT | EPOLLERR;
@@ -226,6 +231,7 @@ bool luselector::add(lutcplink * ltl)
 bool luselector::del(lutcplink * ltl)
 {
 #ifdef WIN32
+	return true;
 #else
     ::close(ltl->s);
 	if (::epoll_ctl(epollfd, EPOLL_CTL_DEL, ltl->s, 0) == -1) 
@@ -240,6 +246,7 @@ bool luselector::del(lutcplink * ltl)
 bool luselector::select()
 {   
 #ifdef WIN32
+	return true;
 #else
     int ret = ::epoll_wait(epollfd, events, len, waittime);
 	if (ret < 0)

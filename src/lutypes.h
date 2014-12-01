@@ -17,6 +17,7 @@
 #include <time.h>
 #include <stdarg.h>
 #include <assert.h>
+#include <map>
 
 #ifdef _DEBUG
 #define LULOG(...) lulog("[DEBUG] ", __FILE__, __FUNCTION__, __LINE__, __VA_ARGS__);

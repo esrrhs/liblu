@@ -28,11 +28,13 @@ struct luselector
     cb_link_in cbi;
     cb_link_out cbo;
 #ifdef WIN32
+	typedef std::map<socket_t, lutcplink *> lutcplinkmap;
+	lutcplinkmap * ltlmap;
 #else
     int epollfd;
-    epoll_event * events;
-};
+	epoll_event * events;
 #endif
+};
 
 struct lutcplink
 {

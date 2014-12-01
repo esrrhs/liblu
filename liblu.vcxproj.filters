@@ -18,6 +18,9 @@
     <ClInclude Include="src\lutypes.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="src\circle_buffer.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\lu.cpp">
