@@ -35,6 +35,17 @@ typedef int socklen_t;
 #else
 #endif
 
+// socket
+#ifdef WIN32
+	#define GET_NET_ERROR WSAGetLastError()
+	#define NET_BLOCK_ERROR WSAEWOULDBLOCK
+	#define NET_BLOCK_ERROR_EX WSAEWOULDBLOCK
+#else
+	#define GET_NET_ERROR errno
+	#define NET_BLOCK_ERROR EWOULDBLOCK
+	#define NET_BLOCK_ERROR_EX EAGAIN
+#endif
+
 #define LUMIN(a, b) ((a) < (b) ? (a) : (b))
 
 struct lu;
