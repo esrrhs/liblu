@@ -41,6 +41,12 @@ struct circle_buffer
         m_l = l;
         m_size = len;
         m_buffer = (char*)safelumalloc(m_l, len);
+		m_datasize = 0;
+		m_begin = 0;
+		m_end = 0;
+		m_store_datasize = 0;
+		m_store_begin = 0;
+		m_store_end = 0;
     }
     void fini()
     {   

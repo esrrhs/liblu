@@ -36,7 +36,8 @@ struct luconfig
 {
     luconfig() : lum(&malloc), luf(&free), type(lut_tcpserver),
 		port(8888), isreconnect(true), maxconnnum(1000),
-		backlog(128), isnonblocking(true), sendbuff(1024*1024), recvbuff(1024*1024),
+		backlog(128), linger(0), isnonblocking(true), sendbuff(1024*1024), recvbuff(1024*1024),
+		socket_sendbuff(1024*256), socket_recvbuff(1024*256),
 		waittimeout(1)
     {
 		strcpy(ip, "127.0.0.1");
@@ -55,11 +56,15 @@ struct luconfig
 	int maxconnnum;
 	// tcp参数
 	int backlog;
+	int linger;
 	// 非阻塞
 	bool isnonblocking;
 	// 发送接收缓冲区
 	int sendbuff;
 	int recvbuff;
+	// socket发送接收缓冲区大小
+	int socket_sendbuff;
+	int socket_recvbuff;
 	// select超时时间
 	int waittimeout;
 };

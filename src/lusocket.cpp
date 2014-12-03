@@ -94,19 +94,36 @@ lutcpserver * newtcpserver(lu * l)
 	memset(ts->ltls, 0, sizeof(sizeof(lutcplink) * ts->ltlsnum));
     for (int i = 0; i < (int)ts->ltlsnum; i++)
     {
-        ts->ltls[i].clear();
+        ts->ltls[i].ini(l, i);
     }
 
     // 建立selector
-    ts->ls.ini(l, ts->ltlsnum, l->cfg.waittimeout, 0, 0, 0);
+    ts->ls.ini(l, ts->ltlsnum, l->cfg.waittimeout, on_tcpserver_err, on_tcpserver_in, on_tcpserver_out);
+
+    // 把server的listen加进去
+    ts->ltls[0].s = ts->s;
+    ts->ls.add(&ts->ltls[0]);
+
+    // 建立index
+    ts->ltlsfreeindex.ini(l, ts->ltlsnum);
+    for (int i = 1; i < (int)ts->ltlsnum; i++)
+    {
+        ts->ltlsfreeindex.push(i);
+    }
 
 	return ts;
 }
 
 void deltcpserver(lutcpserver * lts)
 {
+    lts->ls.fini();
+    for (int i = 0; i < (int)lts->ltlsnum; i++)
+    {
+        lts->ltls[i].fini();
+    }
+	safelufree(lts->l, lts->ltls);
 	close_socket(lts->s);
-	lts->l->cfg.luf(lts);
+	safelufree(lts->l, lts);
 }
 
 lutcpclient * newtcpclient(lu * l)
@@ -145,6 +162,14 @@ bool set_socket_nonblocking(socket_t s, bool on)
 #endif
 }
 
+bool set_socket_linger(socket_t s, uint32_t lingertime)
+{
+	linger so_linger;
+	so_linger.l_onoff = true;
+	so_linger.l_linger = lingertime;
+	return ::setsockopt(s, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger)) == 0;
+}
+
 void close_socket(socket_t s)
 {
 	if (s != -1)
@@ -166,8 +191,30 @@ void ticktcpclient(lutcpclient * ltc)
 {
 }
 
+void lutcplink::ini(lu * _l, int _index)
+{
+    l = _l;
+    index = _index;
+    s = -1;
+    sendbuff.ini(_l, _l->cfg.sendbuff);
+    recvbuff.ini(_l, _l->cfg.recvbuff);
+    sendpacket = 0;
+    recvpacket = 0;
+    sendbytes = 0;
+    recvbytes = 0;
+    processtime = 0;
+}
+
+void lutcplink::fini()
+{
+    close_socket(s);
+    sendbuff.fini();
+    recvbuff.fini();
+}
+
 void lutcplink::clear()
 {
+    close_socket(s);
     s = -1;
     sendbuff.clear();
     recvbuff.clear();
@@ -291,4 +338,146 @@ bool luselector::select()
 #endif
 }
 
+lutcplink * lutcpserver::alloc_tcplink()
+{
+    int index = 0;
+    if (!ltlsfreeindex.pop(index))
+    {
+        return 0;
+    }
+
+    ltls[index].clear();
+    
+    return &ltls[index];
+}
+
+void lutcpserver::dealloc_tcplink(lutcplink * ltl)
+{
+    ltl->clear();
+    ltlsfreeindex.push(ltl->index);
+}
+
+int on_tcpserver_err(lutcplink * ltl)
+{
+    LULOG("on_tcpserver_err %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+
+    // TODO 更上层的回调
+
+    return -1;
+}
+
+int on_tcpserver_in(lutcplink * ltl)
+{
+    LULOG("on_tcpserver_in %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+    
+    lu * l = ltl->l;
+    lutcpserver * lts = l->ts;
+    
+    // accept
+    if (lts->s == ltl->s)
+    {
+        on_tcpserver_accept(ltl);
+        return 0;
+    }
+
+    // 写入到输入缓冲区
+	if (ltl->recvbuff.full())
+	{
+        LULOG("on_tcpserver_in recv buff is full(%u) %d from %s:%u", ltl->recvbuff.size(), ltl->s, ltl->peerip, ltl->peerport);
+		return 0;
+	}
+
+	int len = ::recv(ltl->s, ltl->recvbuff.get_write_line_buffer(), ltl->recvbuff.get_write_line_size(), 0);
+
+    LULOG("on_tcpserver_in recv size(%d) %d from %s:%u", len, ltl->s, ltl->peerip, ltl->peerport);
+        
+	if (len == 0 || len < 0)
+	{
+		if (GET_NET_ERROR != NET_BLOCK_ERROR && GET_NET_ERROR != NET_BLOCK_ERROR_EX)
+		{
+            LULOG("on_tcpserver_in socket error %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+		    return -1;
+		}
+	}
+	else
+	{
+		ltl->recvbuff.skip_write(len);
+	}
+    
+    return 0;
+}
+
+int on_tcpserver_accept(lutcplink * ltl)
+{
+	sockaddr_in _sockaddr;
+	memset(&_sockaddr, 0, sizeof(_sockaddr));
+	socklen_t size = sizeof(_sockaddr);
+    socket_t s = ::accept(ltl->s, (sockaddr*)&_sockaddr, &size);
+    if (s == -1)
+    {
+        return -1;
+    }
+
+    // 创建新连接
+    lu * l = ltl->l;
+    lutcpserver * lts = l->ts;
+    lutcplink * newltl = lts->alloc_tcplink();
+
+    newltl->s = s;
+	strcpy(newltl->peerip, inet_ntoa(_sockaddr.sin_addr));
+	newltl->peerport = htons(_sockaddr.sin_port);
+
+    ::setsockopt(s, SOL_SOCKET, SO_RCVBUF, &l->cfg.socket_recvbuff, sizeof(int));
+    ::setsockopt(s, SOL_SOCKET, SO_SNDBUF, &l->cfg.socket_sendbuff, sizeof(int));   
+
+    set_socket_nonblocking(s, l->cfg.isnonblocking);
+    set_socket_linger(s, l->cfg.linger);
+
+	sockaddr_in _local_sockaddr;
+	memset(&_local_sockaddr, 0, sizeof(_local_sockaddr));
+	size = sizeof(_local_sockaddr);
+	if (::getsockname(s, (sockaddr *)&_local_sockaddr, &size) == 0)
+	{
+		strcpy(newltl->ip, inet_ntoa(_local_sockaddr.sin_addr));
+		newltl->port = htons(_local_sockaddr.sin_port);
+	}
+	
+    // 加入到selector
+    lts->ls.add(newltl);
+
+    LULOG("accept new link from %s:%u", newltl->peerip, newltl->peerport);
+    
+    return 0;
+}
+
+int on_tcpserver_out(lutcplink * ltl)
+{    
+    if (ltl->sendbuff.empty())
+    {
+    	return true;
+    }
+    
+    LULOG("on_tcpserver_out %d to %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+
+    int len = ::send(ltl->s, 
+    	ltl->sendbuff.get_read_line_buffer(), 
+    	ltl->sendbuff.get_read_line_size(), 0);
+
+    LULOG("on_tcpserver_out send size(%d) %d to %s:%u", len, ltl->s, ltl->peerip, ltl->peerport);
+    
+    if (len == 0 || len < 0)
+    {
+    	if (GET_NET_ERROR != NET_BLOCK_ERROR && GET_NET_ERROR != NET_BLOCK_ERROR_EX)
+    	{
+            LULOG("on_tcpserver_out socket error %d to %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+    		return -1;
+    	}
+    }
+    else
+    {
+    	ltl->sendbuff.skip_read(len);
+    }
+
+    return 0;
+}
 
