@@ -11,12 +11,14 @@ struct epoll_event;
 typedef int (*cb_link_err)(lutcplink * ltl);
 typedef int (*cb_link_in)(lutcplink * ltl);
 typedef int (*cb_link_out)(lutcplink * ltl);
+typedef int (*cb_link_close)(lutcplink * ltl);
 struct luselector
 {
     void ini(lu * _l, size_t _len, int _waittime, 
         cb_link_err _cbe, 
         cb_link_in _cbi, 
-        cb_link_out _cbo);
+        cb_link_out _cbo,
+        cb_link_close _cbc);
     void fini();
     bool add(lutcplink * ltl);
     bool del(lutcplink * ltl);
@@ -28,6 +30,7 @@ struct luselector
     cb_link_err cbe;
     cb_link_in cbi;
     cb_link_out cbo;
+    cb_link_close cbc;
 #ifdef WIN32
 	typedef std::map<socket_t, lutcplink *> lutcplinkmap;
 	lutcplinkmap * ltlmap;
@@ -57,6 +60,7 @@ struct lutcplink
 	uint16_t port;
 	char peerip[LU_IP_SIZE];
 	uint16_t peerport;
+	luuserdata userdata;
 };
 
 struct lutcpserver
@@ -100,6 +104,7 @@ int on_tcpserver_err(lutcplink * ltl);
 int on_tcpserver_in(lutcplink * ltl);
 int on_tcpserver_out(lutcplink * ltl);
 int on_tcpserver_accept(lutcplink * ltl);
+int on_tcpserver_close(lutcplink * ltl);
 
 bool set_socket_nonblocking(socket_t s, bool on);
 bool set_socket_linger(socket_t s, uint32_t lingertime);

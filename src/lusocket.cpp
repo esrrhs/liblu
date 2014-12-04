@@ -98,7 +98,7 @@ lutcpserver * newtcpserver(lu * l)
     }
 
     // 建立selector
-    ts->ls.ini(l, ts->ltlsnum, l->cfg.waittimeout, on_tcpserver_err, on_tcpserver_in, on_tcpserver_out);
+    ts->ls.ini(l, ts->ltlsnum, l->cfg.waittimeout, on_tcpserver_err, on_tcpserver_in, on_tcpserver_out, on_tcpserver_close);
 
     // 把server的listen加进去
     ts->ltls[0].s = ts->s;
@@ -184,7 +184,7 @@ void close_socket(socket_t s)
 
 void ticktcpserver(lutcpserver * lts)
 {
-    
+    lts->ls.select();
 }
 
 void ticktcpclient(lutcpclient * ltc)
@@ -223,12 +223,18 @@ void lutcplink::clear()
     sendbytes = 0;
     recvbytes = 0;
     processtime = 0;
+    ip[0] = 0;
+    port = 0;
+    peerip[0] = 0;
+    peerport = 0;
+    userdata.u64 = 0;
 }
 
 void luselector::ini(lu * _l, size_t _len, int _waittime, 
         cb_link_err _cbe, 
         cb_link_in _cbi, 
-        cb_link_out _cbo)
+        cb_link_out _cbo,
+        cb_link_close _cbc)
 {
     l = _l;
     len = _len;
@@ -236,6 +242,7 @@ void luselector::ini(lu * _l, size_t _len, int _waittime,
     cbe = _cbe;
     cbi = _cbi;
     cbo = _cbo;
+    cbc = _cbc;
 #ifdef WIN32
 	ltlmap = (lutcplinkmap *)safelumalloc(l, sizeof(lutcplinkmap));
 	new (ltlmap)lutcplinkmap();
@@ -280,7 +287,6 @@ bool luselector::del(lutcplink * ltl)
 #ifdef WIN32
 	return true;
 #else
-    ::close(ltl->s);
 	if (::epoll_ctl(epollfd, EPOLL_CTL_DEL, ltl->s, 0) == -1) 
 	{
 	    assert(0);
@@ -312,24 +318,24 @@ bool luselector::select()
 	    lutcplink * ltl = (lutcplink *)ev.data.ptr;
 	    if(EPOLLERR & ev.events)
 	    {
-	        if (cbe)
-	        {
-	            cbe(ltl);
-	        }
+	        cbe(ltl);
 	        del(ltl);
+	        cbc(ltl);
 	    }
 	    if(EPOLLIN & ev.events)
 	    {
-	        if (cbi && cbi(ltl) != 0)
+	        if (cbi(ltl) != 0)
 	        {
 	            del(ltl);
+	            cbc(ltl);
 	        }
 	    }
 	    if(EPOLLOUT & ev.events)
 	    {
-	        if (cbo && cbo(ltl) != 0)
+	        if (cbo(ltl) != 0)
 	        {
 	            del(ltl);
+	            cbc(ltl);
 	        }
 	    }
     }
@@ -360,8 +366,6 @@ void lutcpserver::dealloc_tcplink(lutcplink * ltl)
 int on_tcpserver_err(lutcplink * ltl)
 {
     LULOG("on_tcpserver_err %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
-
-    // TODO 更上层的回调
 
     return -1;
 }
@@ -403,6 +407,8 @@ int on_tcpserver_in(lutcplink * ltl)
 	{
 		ltl->recvbuff.skip_write(len);
 	}
+
+	// 解包
     
     return 0;
 }
@@ -445,6 +451,12 @@ int on_tcpserver_accept(lutcplink * ltl)
     // 加入到selector
     lts->ls.add(newltl);
 
+    // 上层的回调
+    if (l->cfg.cco)
+    {
+        l->cfg.cco(l, newltl->index, newltl->userdata);
+    }
+
     LULOG("accept new link from %s:%u", newltl->peerip, newltl->peerport);
     
     return 0;
@@ -478,6 +490,24 @@ int on_tcpserver_out(lutcplink * ltl)
     	ltl->sendbuff.skip_read(len);
     }
 
+    return 0;
+}
+
+int on_tcpserver_close(lutcplink * ltl)
+{
+    LULOG("on_tcpserver_close %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+
+    lu * l = ltl->l;
+    lutcpserver * lts = l->ts;
+
+    lts->dealloc_tcplink(ltl);
+    
+    // 上层的回调
+    if (l->cfg.ccc)
+    {
+        l->cfg.ccc(l, ltl->index, ltl->userdata);
+    }
+    
     return 0;
 }
 
