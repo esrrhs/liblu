@@ -90,6 +90,7 @@
     <ClInclude Include="include\lu.h" />
     <ClInclude Include="src\circle_buffer.h" />
     <ClInclude Include="src\lusocket.h" />
+    <ClInclude Include="src\lustack.h" />
     <ClInclude Include="src\lutypes.h" />
   </ItemGroup>
   <ItemGroup>

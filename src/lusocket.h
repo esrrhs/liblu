@@ -12,6 +12,7 @@ typedef int (*cb_link_err)(lutcplink * ltl);
 typedef int (*cb_link_in)(lutcplink * ltl);
 typedef int (*cb_link_out)(lutcplink * ltl);
 typedef int (*cb_link_close)(lutcplink * ltl);
+// window下仅供调试
 struct luselector
 {
     void ini(lu * _l, size_t _len, int _waittime, 

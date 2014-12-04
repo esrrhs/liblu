@@ -1,6 +1,7 @@
 #include "lusocket.h"
 #ifdef WIN32
 #include <windows.h>
+#include <winsock.h>
 #else
 #include <sys/types.h>          /* See NOTES */
 #include <sys/socket.h>
@@ -167,7 +168,7 @@ bool set_socket_linger(socket_t s, uint32_t lingertime)
 	linger so_linger;
 	so_linger.l_onoff = true;
 	so_linger.l_linger = lingertime;
-	return ::setsockopt(s, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger)) == 0;
+	return ::setsockopt(s, SOL_SOCKET, SO_LINGER, (const char *)&so_linger, sizeof(so_linger)) == 0;
 }
 
 void close_socket(socket_t s)
@@ -268,6 +269,7 @@ void luselector::fini()
 bool luselector::add(lutcplink * ltl)
 {
 #ifdef WIN32
+	(*ltlmap)[ltl->s] = ltl;
 	return true;
 #else
 	epoll_event ev;
@@ -285,6 +287,7 @@ bool luselector::add(lutcplink * ltl)
 bool luselector::del(lutcplink * ltl)
 {
 #ifdef WIN32
+	(*ltlmap).erase(ltl->s);
 	return true;
 #else
 	if (::epoll_ctl(epollfd, EPOLL_CTL_DEL, ltl->s, 0) == -1) 
@@ -299,6 +302,76 @@ bool luselector::del(lutcplink * ltl)
 bool luselector::select()
 {   
 #ifdef WIN32
+	fd_set readfds;
+	fd_set writefds;
+	fd_set exceptfds;
+	socket_t maxfd;
+	FD_ZERO(&readfds);
+	FD_ZERO(&writefds);
+	FD_ZERO(&exceptfds);
+	maxfd = -1;
+
+	for (lutcplinkmap::iterator it = (*ltlmap).begin(); it != (*ltlmap).end(); it++)
+	{
+		socket_t s = it->first;
+		FD_SET(s, &readfds);
+		FD_SET(s, &writefds);
+		FD_SET(s, &exceptfds);
+		maxfd = LUMAX(maxfd, s + 1);
+	}
+
+	timeval timeout;
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 0;
+
+	int ret = ::select(maxfd + 1, 
+		&readfds,
+		&writefds,
+		&exceptfds,
+		&timeout);
+
+	if (ret < 0)
+	{
+		return false;
+	}
+	
+	std::vector<lutcplink *> delvec;
+	for (lutcplinkmap::iterator it = (*ltlmap).begin(); it != (*ltlmap).end(); it++)
+	{
+		socket_t s = it->first;
+		lutcplink * ltl = it->second;
+		if (FD_ISSET(s, &exceptfds) != 0)
+		{
+			cbe(ltl);
+			delvec.push_back(ltl);
+			cbc(ltl);
+			continue;
+		}
+		if (FD_ISSET(s, &readfds) != 0)
+		{
+			if (cbi(ltl) != 0)
+			{
+				delvec.push_back(ltl);
+				cbc(ltl);
+				continue;
+			}
+		}
+		if (FD_ISSET(s, &writefds) != 0)
+		{
+			if (cbo(ltl) != 0)
+			{
+				delvec.push_back(ltl);
+				cbc(ltl);
+				continue;
+			}
+		}
+	}
+
+	for (int i = 0; i < (int)delvec.size(); i++)
+	{
+		del(delvec[i]);
+	}
+
 	return true;
 #else
     int ret = ::epoll_wait(epollfd, events, len, waittime);
@@ -321,13 +394,15 @@ bool luselector::select()
 	        cbe(ltl);
 	        del(ltl);
 	        cbc(ltl);
+			continue;
 	    }
 	    if(EPOLLIN & ev.events)
 	    {
 	        if (cbi(ltl) != 0)
 	        {
 	            del(ltl);
-	            cbc(ltl);
+				cbc(ltl);
+				continue;
 	        }
 	    }
 	    if(EPOLLOUT & ev.events)
@@ -335,7 +410,8 @@ bool luselector::select()
 	        if (cbo(ltl) != 0)
 	        {
 	            del(ltl);
-	            cbc(ltl);
+				cbc(ltl);
+				continue;
 	        }
 	    }
     }
@@ -433,8 +509,8 @@ int on_tcpserver_accept(lutcplink * ltl)
 	strcpy(newltl->peerip, inet_ntoa(_sockaddr.sin_addr));
 	newltl->peerport = htons(_sockaddr.sin_port);
 
-    ::setsockopt(s, SOL_SOCKET, SO_RCVBUF, &l->cfg.socket_recvbuff, sizeof(int));
-    ::setsockopt(s, SOL_SOCKET, SO_SNDBUF, &l->cfg.socket_sendbuff, sizeof(int));   
+    ::setsockopt(s, SOL_SOCKET, SO_RCVBUF, (const char *)&l->cfg.socket_recvbuff, sizeof(int));
+	::setsockopt(s, SOL_SOCKET, SO_SNDBUF, (const char *)&l->cfg.socket_sendbuff, sizeof(int));
 
     set_socket_nonblocking(s, l->cfg.isnonblocking);
     set_socket_linger(s, l->cfg.linger);
