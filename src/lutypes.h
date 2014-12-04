@@ -47,6 +47,7 @@ typedef int socklen_t;
 #endif
 
 #define LUMIN(a, b) ((a) < (b) ? (a) : (b))
+#define LUMAX(a, b) ((a) > (b) ? (a) : (b))
 
 struct lu;
 void * safelumalloc(lu * l, size_t len);
