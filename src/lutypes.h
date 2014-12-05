@@ -49,6 +49,14 @@ typedef int socklen_t;
 #define LUMIN(a, b) ((a) < (b) ? (a) : (b))
 #define LUMAX(a, b) ((a) > (b) ? (a) : (b))
 
+template <typename T>
+void luswap(T & left, T & right)
+{
+    T tmp = left;
+    left = right;
+    right = tmp;
+}
+
 struct lu;
 void * safelumalloc(lu * l, size_t len);
 void safelufree(lu * l, void * p);

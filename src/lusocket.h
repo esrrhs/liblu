@@ -5,6 +5,31 @@
 #include "circle_buffer.h"
 #include "lustack.h"
 
+#define HEAD_MAGIC (0xCC)
+
+#pragma pack(1)
+struct msgheader
+{
+    uint8_t magic;
+    uint8_t flag;
+    uint32_t size;
+};
+#pragma pack()
+
+/*
+** flag codes
+*/
+// º”√‹
+#define LU_FLAG_ENCRYPT	0
+#define LU_FLAG_MASK_ENCRYPT	(1 << LU_FLAG_ENCRYPT)
+#define IS_ENCRYPT(flag) ((flag) & LU_FLAG_MASK_ENCRYPT)
+#define SET_ENCRYPT(flag) ((flag) | LU_FLAG_MASK_ENCRYPT)
+// —πÀı
+#define LU_FLAG_COMPRESS	1
+#define LU_FLAG_MASK_COMPRESS	(1 << LU_FLAG_COMPRESS)
+#define IS_COMPRESS(flag) ((flag) & LU_FLAG_MASK_COMPRESS)
+#define SET_COMPRESS(flag) ((flag) | LU_FLAG_MASK_COMPRESS)
+
 struct lu;
 struct lutcplink;
 struct epoll_event;
@@ -79,8 +104,9 @@ struct lutcpserver
 
 struct lutcpclient
 {
-	lu * l;
+    bool reconnect();
 	lutcplink ltl;
+	luselector ls;
 };
 
 struct lu
@@ -91,6 +117,8 @@ struct lu
 	lutype type;
 	lutcpserver * ts;
 	lutcpclient * tc;
+	char * recvpacketbuffer;
+	char * recvpacketbufferex;
 };
 
 lutcpserver * newtcpserver(lu * l);
@@ -101,13 +129,32 @@ void deltcpclient(lutcpclient * ltc);
 void ticktcpserver(lutcpserver * lts);
 void ticktcpclient(lutcpclient * ltc);
 
+void recv_tcpserver_packet(lutcpserver * lts);
+void recv_tcpclient_packet(lutcpclient * ltc);
+int unpack_packet(lu * l, circle_buffer * cb, int connid, luuserdata & userdata);
+int pack_packet(lu * l, circle_buffer * cb, int connid, char * buffer, size_t size);
+
+int sendtcpserver(lutcpserver * lts, char * buffer, size_t size, int connid);
+int sendtcpclient(lutcpclient * ltc, char * buffer, size_t size, int connid);
+
 int on_tcpserver_err(lutcplink * ltl);
 int on_tcpserver_in(lutcplink * ltl);
 int on_tcpserver_out(lutcplink * ltl);
 int on_tcpserver_accept(lutcplink * ltl);
 int on_tcpserver_close(lutcplink * ltl);
 
+int on_tcpclient_err(lutcplink * ltl);
+int on_tcpclient_in(lutcplink * ltl);
+int on_tcpclient_out(lutcplink * ltl);
+int on_tcpclient_close(lutcplink * ltl);
+
 bool set_socket_nonblocking(socket_t s, bool on);
 bool set_socket_linger(socket_t s, uint32_t lingertime);
 void close_socket(socket_t s);
+
+bool encrypt_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize);
+bool decrypt_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize);
+
+bool compress_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize);
+bool decompress_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize);
 
