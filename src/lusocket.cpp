@@ -46,7 +46,7 @@ lutcpserver * newtcpserver(lu * l)
 	ts->s = ::socket(AF_INET, SOCK_STREAM, 0);
 	if (ts->s == -1)
 	{
-		LUERR("create socket error");
+		LUERR("create socket error %s:%u", l->cfg.ip, l->cfg.port);
 		safelufree(l, ts);
 		return 0;
 	}
@@ -67,7 +67,7 @@ lutcpserver * newtcpserver(lu * l)
 	int32_t ret = ::bind(ts->s, (const sockaddr *)&_sockaddr, sizeof(_sockaddr));
 	if (ret != 0)
 	{
-		LUERR("bind socket error");
+		LUERR("bind socket error %s:%u", l->cfg.ip, l->cfg.port);
 		safelufree(l, ts);
 		return 0;
 	}
@@ -76,7 +76,7 @@ lutcpserver * newtcpserver(lu * l)
 	ret = ::listen(ts->s, l->cfg.backlog);
 	if (ret != 0)
 	{
-		LUERR("listen socket error");
+		LUERR("listen socket error %s:%u", l->cfg.ip, l->cfg.port);
 		safelufree(l, ts);
 		return 0;
 	}
@@ -84,7 +84,7 @@ lutcpserver * newtcpserver(lu * l)
 	// 非阻塞
 	if (!set_socket_nonblocking(ts->s, l->cfg.isnonblocking))
 	{
-		LUERR("set nonblocking socket error");
+		LUERR("set nonblocking socket error %s:%u", l->cfg.ip, l->cfg.port);
 		safelufree(l, ts);
 		return 0;
 	}
@@ -107,37 +107,133 @@ lutcpserver * newtcpserver(lu * l)
 
     // 建立index
     ts->ltlsfreeindex.ini(l, ts->ltlsnum);
-    for (int i = 1; i < (int)ts->ltlsnum; i++)
+    for (int i = (int)ts->ltlsnum - 1; i >= 1; i--)
     {
         ts->ltlsfreeindex.push(i);
     }
 
+    // 建立解包缓冲区
+    l->recvpacketbuffer = (char*)safelumalloc(l, l->cfg.maxpacketlen);
+    l->recvpacketbufferex = (char*)safelumalloc(l, l->cfg.maxpacketlen);
+    
+	LULOG("start tcp server ok %s %d", l->cfg.ip, l->cfg.port);
+	
 	return ts;
 }
 
 void deltcpserver(lutcpserver * lts)
 {
+    lu * l = lts->l;
+	safelufree(l, l->recvpacketbuffer);
+	safelufree(l, l->recvpacketbufferex);
+    lts->ltlsfreeindex.fini();
     lts->ls.fini();
     for (int i = 0; i < (int)lts->ltlsnum; i++)
     {
         lts->ltls[i].fini();
     }
-	safelufree(lts->l, lts->ltls);
+	safelufree(l, lts->ltls);
 	close_socket(lts->s);
-	safelufree(lts->l, lts);
+	safelufree(l, lts);
+}
+
+bool lutcpclient::reconnect()
+{
+    lu * l = ltl.l;
+    
+	LULOG("reconnect tcp client %s %d", l->cfg.ip, l->cfg.port);
+
+    close_socket(ltl.s);
+    ltl.s = -1;
+    
+	strcpy(ltl.peerip, l->cfg.ip);
+	ltl.peerport = l->cfg.port;
+
+	// create
+	socket_t s = ::socket(AF_INET, SOCK_STREAM, 0);
+	if (s == -1)
+	{
+		LUERR("create socket error %s:%u", l->cfg.ip, l->cfg.port);
+		return false;
+	}	
+    ltl.s = s;
+
+	// connect
+	sockaddr_in _sockaddr;
+	memset(&_sockaddr, 0, sizeof(_sockaddr));
+	_sockaddr.sin_family = AF_INET;
+	_sockaddr.sin_port = htons(l->cfg.port);
+	_sockaddr.sin_addr.s_addr = inet_addr(l->cfg.ip);
+	int ret = ::connect(s, (const sockaddr *)&_sockaddr, sizeof(_sockaddr));
+	if (ret != 0)
+	{
+		LUERR("connect error %s:%u", l->cfg.ip, l->cfg.port);
+        close_socket(ltl.s);
+        ltl.s = -1;
+		return false;
+	}
+
+	// 缓冲区
+    ::setsockopt(s, SOL_SOCKET, SO_RCVBUF, (const char *)&l->cfg.socket_recvbuff, sizeof(int));
+	::setsockopt(s, SOL_SOCKET, SO_SNDBUF, (const char *)&l->cfg.socket_sendbuff, sizeof(int));
+
+	// 非阻塞
+    set_socket_nonblocking(s, l->cfg.isnonblocking);
+
+	// linger
+    set_socket_linger(s, l->cfg.linger);
+
+	// 获取自己的信息
+	sockaddr_in _local_sockaddr;
+	memset(&_local_sockaddr, 0, sizeof(_local_sockaddr));
+	socklen_t size = sizeof(_local_sockaddr);
+	if (::getsockname(s, (sockaddr *)&_local_sockaddr, &size) == 0)
+	{
+		strcpy(ltl.ip, inet_ntoa(_local_sockaddr.sin_addr));
+		ltl.port = htons(_local_sockaddr.sin_port);
+	}
+
+	LULOG("reconnect tcp client ok %s %d", l->cfg.ip, l->cfg.port);
+	
+	ls.add(&ltl);
+	    
+    // 上层的回调
+    if (l->cfg.cco)
+    {
+        l->cfg.cco(l, ltl.index, ltl.userdata);
+    }
+    
+    return 0;
 }
 
 lutcpclient * newtcpclient(lu * l)
 {
+	LULOG("start tcp client %s %d", l->cfg.ip, l->cfg.port);
+	
 	lutcpclient * tc = (lutcpclient *)l->lum(sizeof(lutcpclient));
 	memset(tc, 0, sizeof(lutcpclient));
+    tc->ltl.ini(l, 0);
 
+    // 建立selector
+    tc->ls.ini(l, 1, l->cfg.waittimeout, on_tcpclient_err, on_tcpclient_in, on_tcpclient_out, on_tcpclient_close);
+    
+    // 建立解包缓冲区
+    l->recvpacketbuffer = (char*)safelumalloc(l, l->cfg.maxpacketlen);
+    l->recvpacketbufferex = (char*)safelumalloc(l, l->cfg.maxpacketlen);
+    
+	LULOG("start tcp client ok %s %d", l->cfg.ip, l->cfg.port);
+	
 	return tc;
 }
 
 void deltcpclient(lutcpclient * ltc)
 {
-
+    lu * l = ltc->ltl.l;
+	safelufree(l, l->recvpacketbuffer);
+	safelufree(l, l->recvpacketbufferex);
+    ltc->ltl.fini();
+    ltc->ls.fini();
+	safelufree(l, ltc);
 }
 
 bool set_socket_nonblocking(socket_t s, bool on)
@@ -186,10 +282,147 @@ void close_socket(socket_t s)
 void ticktcpserver(lutcpserver * lts)
 {
     lts->ls.select();
+    recv_tcpserver_packet(lts);
+}
+
+void recv_tcpserver_packet(lutcpserver * lts)
+{
+    lu * l = lts->l;
+    int maxvalidnum = lts->ltlsnum - lts->ltlsfreeindex.size() - 1;
+    int validnum = 0;
+    for (int i = 1; i < (int)lts->ltlsnum && validnum < maxvalidnum; i++)
+    {   
+        lutcplink & ltl = lts->ltls[i];
+        if (ltl.s > 0)
+        {
+            for (int j = 0; j < (int)l->cfg.maxrecvpacket_perframe; j++)
+            {
+                LULOG("recv_tcpserver_packet %d from %s:%u", ltl.s, ltl.peerip, ltl.peerport);
+                if (unpack_packet(l, &ltl.recvbuff, ltl.index, ltl.userdata) != 0)
+                {
+                    break;
+                }
+            }
+            validnum++;
+        }
+    }
+}
+
+int unpack_packet(lu * l, circle_buffer * cb, int connid, luuserdata & userdata)
+{    
+    if (cb->empty())
+    {
+        return -1;
+    }
+
+    LULOG("unpack_packet from %d size(%d)", connid, (int)cb->size());
+                
+    // 找出正确包头
+    msgheader head;
+    head.magic = 0;
+    while (1)
+    {
+        cb->store();
+        if (!cb->read((char*)&head, sizeof(head)))
+        {
+            LULOG("unpack_packet from %d not enough head size(%d)", connid, (int)cb->size());
+            return -1;
+        }
+
+        if (head.magic == HEAD_MAGIC)
+        {
+            break;
+        }
+
+        assert(0);
+        cb->skip_read(1);
+        LUERR("unpack_packet from %d wrong head %u size(%d)", connid, head.magic, (int)cb->size());
+    }
+
+    // 超过最大大小，说明包有问题，跳过他
+    if (head.size >= l->cfg.maxpacketlen)
+    {
+        LUERR("unpack_packet from %d max size %d size(%d)", connid, (int)head.size, (int)l->cfg.maxpacketlen);
+        cb->restore();
+        cb->skip_read(1);
+        assert(0);
+        return -1;
+    }
+
+    // size不够，等下次
+    if (!cb->read(l->recvpacketbuffer, head.size))
+    {
+        LUERR("unpack_packet from %d not enough size %d size(%d)", connid, (int)head.size, (int)cb->size());
+        cb->restore();
+        return -1;
+    }
+
+    LULOG("unpack_packet start %d size(%d)", connid, (int)head.size);
+    
+    char * buffer = l->recvpacketbuffer;
+    size_t datasize = head.size;
+    char * destbuffer = l->recvpacketbufferex;
+    size_t destdatasize = 0;
+    if (IS_ENCRYPT(head.flag))
+    {
+        if (!decrypt_packet(buffer, datasize, destbuffer, l->cfg.maxpacketlen, destdatasize))
+        {
+            LUERR("unpack_packet decrypt %d err size(%d)", connid, (int)datasize);
+            assert(0);
+            return -1;
+        }
+        LULOG("unpack_packet decrypt %d new size(%d) oldsize(%d)", connid, (int)destdatasize, (int)datasize);
+        luswap(buffer, destbuffer);
+        luswap(datasize, destdatasize);
+    }
+
+    if (IS_COMPRESS(head.flag))
+    {
+        if (!decompress_packet(buffer, datasize, destbuffer, l->cfg.maxpacketlen, destdatasize))
+        {
+            LUERR("unpack_packet decompress %d err size(%d)", connid, (int)datasize);
+            assert(0);
+            return -1;
+        }
+        LULOG("unpack_packet decompress %d new size(%d) oldsize(%d)", connid, (int)destdatasize, (int)datasize);
+        luswap(buffer, destbuffer);
+        luswap(datasize, destdatasize);
+    }
+
+    if (l->cfg.ccrp)
+    {
+        LULOG("unpack_packet cb_conn_recv_packet %d size(%d)", connid, (int)datasize);
+        l->cfg.ccrp(l, connid, buffer, datasize, userdata);
+    }
+    
+    return 0;
 }
 
 void ticktcpclient(lutcpclient * ltc)
 {
+    if (ltc->ltl.s < 0)
+    {
+        ltc->reconnect();
+    }
+    ltc->ls.select();
+    recv_tcpclient_packet(ltc);
+}
+
+void recv_tcpclient_packet(lutcpclient * ltc)
+{
+    lu * l = ltc->ltl.l;
+    lutcplink & ltl = ltc->ltl;
+    if (ltl.s > 0)
+    {
+        for (int j = 0; j < (int)l->cfg.maxrecvpacket_perframe; j++)
+        {
+            LULOG("recv_tcpclient_packet %d from %s:%u", ltl.s, ltl.peerip, ltl.peerport);
+            if (unpack_packet(l, &ltl.recvbuff, ltl.index, ltl.userdata) != 0)
+            {
+                break;
+            }
+        }
+    }
 }
 
 void lutcplink::ini(lu * _l, int _index)
@@ -228,7 +461,7 @@ void lutcplink::clear()
     port = 0;
     peerip[0] = 0;
     peerport = 0;
-    userdata.u64 = 0;
+    memset(&userdata, 0, sizeof(userdata));
 }
 
 void luselector::ini(lu * _l, size_t _len, int _waittime, 
@@ -484,8 +717,6 @@ int on_tcpserver_in(lutcplink * ltl)
 		ltl->recvbuff.skip_write(len);
 	}
 
-	// 解包
-    
     return 0;
 }
 
@@ -542,7 +773,7 @@ int on_tcpserver_out(lutcplink * ltl)
 {    
     if (ltl->sendbuff.empty())
     {
-    	return true;
+    	return 0;
     }
     
     LULOG("on_tcpserver_out %d to %s:%u", ltl->s, ltl->peerip, ltl->peerport);
@@ -576,14 +807,243 @@ int on_tcpserver_close(lutcplink * ltl)
     lu * l = ltl->l;
     lutcpserver * lts = l->ts;
 
-    lts->dealloc_tcplink(ltl);
-    
     // 上层的回调
     if (l->cfg.ccc)
     {
         l->cfg.ccc(l, ltl->index, ltl->userdata);
     }
     
+    lts->dealloc_tcplink(ltl);
+    
     return 0;
 }
+
+bool encrypt_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
+{
+    // TODO
+    memcpy(obuffer, buffer, size);
+    osize = size;
+    return true;
+}
+
+bool decrypt_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
+{
+    // TODO
+    memcpy(obuffer, buffer, size);
+    osize = size;
+    return true;
+}
+
+
+bool compress_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
+{
+    // TODO
+    memcpy(obuffer, buffer, size);
+    osize = size;
+    return true;
+}
+
+bool decompress_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
+{
+    // TODO
+    memcpy(obuffer, buffer, size);
+    osize = size;
+    return true;
+}
+
+int pack_packet(lu * l, circle_buffer * cb, int connid, char * buffer, size_t size)
+{
+    if (size >= l->cfg.maxpacketlen)
+    {
+        LUERR("pack_packet %d too big size size(%d) maxsize(%d)", connid, (int)size, (int)l->cfg.maxpacketlen);
+        return luet_msgtoobig;
+    }
+
+    LULOG("pack_packet %d buffer size(%d) size(%d)", connid, (int)cb->size(), (int)size);
+        
+    cb->store();
+    
+    msgheader head;
+    head.magic = HEAD_MAGIC;
+    if (l->cfg.isencrypt)
+    {
+        head.flag = SET_ENCRYPT(head.flag);
+    }
+    if (l->cfg.iscompress)
+    {
+        head.flag = SET_COMPRESS(head.flag);
+    }
+    head.size = size;
+
+    // 写包头
+    if (!cb->write((const char *)&head, sizeof(head)))
+    {
+        cb->restore();
+        LULOG("pack_packet %d buffer full(%d) size(%d)", connid, (int)cb->size(), (int)size);
+        return luet_sendbufffull;
+    }
+
+    char * srcbuffer = buffer;
+    size_t srcdatasize = size;
+    char * destbuffer = l->recvpacketbuffer;
+    size_t destdatasize = 0;
+    
+    if (l->cfg.iscompress)
+    {
+        if (!compress_packet(srcbuffer, srcdatasize, destbuffer, l->cfg.maxpacketlen, destdatasize))
+        {
+            cb->restore();
+            LUERR("pack_packet %d compress err size(%d)", connid, (int)srcdatasize);
+            assert(0);
+            return luet_compressfail;
+        }
+        LULOG("pack_packet %d compress new size(%d) oldsize(%d)", connid, (int)destdatasize, (int)srcdatasize);
+        destbuffer = l->recvpacketbufferex;
+        srcbuffer = l->recvpacketbuffer;
+        luswap(srcdatasize, destdatasize);
+    }
+
+    if (l->cfg.isencrypt)
+    {
+        if (!encrypt_packet(srcbuffer, srcdatasize, destbuffer, l->cfg.maxpacketlen, destdatasize))
+        {
+            cb->restore();
+            LUERR("pack_packet %d encrypt err size(%d)", connid, (int)srcdatasize);
+            assert(0);
+            return luet_encryptfail;
+        }
+        LULOG("pack_packet %d decrypt new size(%d) oldsize(%d)", connid, (int)destdatasize, (int)srcdatasize);
+        luswap(srcbuffer, destbuffer);
+        luswap(srcdatasize, destdatasize);
+    }
+
+    // 写数据
+    if (!cb->write(srcbuffer, srcdatasize))
+    {
+        cb->restore();
+        LULOG("pack_packet %d buffer full(%d) size(%d)", connid, (int)cb->size(), (int)srcdatasize);
+        return luet_sendbufffull;
+    }
+
+    return luet_ok;
+}
+
+int sendtcpserver(lutcpserver * lts, char * buffer, size_t size, int connid)
+{
+    lu * l = lts->l;
+    
+    if (connid <= 0 || connid >= (int)lts->ltlsnum)
+    {
+        return luet_conninvalid;
+    }
+
+    lutcplink & ltl = lts->ltls[connid];
+    if (ltl.s < 0)
+    {
+        return luet_conninvalid;
+    }
+    
+    return pack_packet(l, &ltl.sendbuff, ltl.index, buffer, size);
+}
+
+int sendtcpclient(lutcpclient * ltc, char * buffer, size_t size, int connid)
+{
+    lu * l = ltc->ltl.l;
+    lutcplink & ltl = ltc->ltl;
+    if (ltl.s < 0)
+    {
+        return luet_conninvalid;
+    }
+    
+    return pack_packet(l, &ltl.sendbuff, ltl.index, buffer, size);
+}
+
+int on_tcpclient_err(lutcplink * ltl)
+{   
+    LULOG("on_tcpclient_err %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+
+    return -1;
+}
+
+int on_tcpclient_in(lutcplink * ltl)
+{
+    LULOG("on_tcpclient_in %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+    
+    // 写入到输入缓冲区
+	if (ltl->recvbuff.full())
+	{
+        LULOG("on_tcpclient_in recv buff is full(%u) %d from %s:%u", ltl->recvbuff.size(), ltl->s, ltl->peerip, ltl->peerport);
+		return 0;
+	}
+
+	int len = ::recv(ltl->s, ltl->recvbuff.get_write_line_buffer(), ltl->recvbuff.get_write_line_size(), 0);
+
+    LULOG("on_tcpclient_in recv size(%d) %d from %s:%u", len, ltl->s, ltl->peerip, ltl->peerport);
+        
+	if (len == 0 || len < 0)
+	{
+		if (GET_NET_ERROR != NET_BLOCK_ERROR && GET_NET_ERROR != NET_BLOCK_ERROR_EX)
+		{
+            LULOG("on_tcpclient_in socket error %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+		    return -1;
+		}
+	}
+	else
+	{
+		ltl->recvbuff.skip_write(len);
+	}
+
+    return 0;
+}
+
+int on_tcpclient_out(lutcplink * ltl)
+{
+    if (ltl->sendbuff.empty())
+    {
+    	return 0;
+    }
+    
+    LULOG("on_tcpclient_out %d to %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+
+    int len = ::send(ltl->s, 
+    	ltl->sendbuff.get_read_line_buffer(), 
+    	ltl->sendbuff.get_read_line_size(), 0);
+
+    LULOG("on_tcpclient_out send size(%d) %d to %s:%u", len, ltl->s, ltl->peerip, ltl->peerport);
+    
+    if (len == 0 || len < 0)
+    {
+    	if (GET_NET_ERROR != NET_BLOCK_ERROR && GET_NET_ERROR != NET_BLOCK_ERROR_EX)
+    	{
+            LULOG("on_tcpclient_out socket error %d to %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+    		return -1;
+    	}
+    }
+    else
+    {
+    	ltl->sendbuff.skip_read(len);
+    }
+
+    return 0;
+}
+
+int on_tcpclient_close(lutcplink * ltl)
+{
+    LULOG("on_tcpclient_close %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+
+    lu * l = ltl->l;
+    lutcpclient * ltc = l->tc;
+
+    // 上层的回调
+    if (l->cfg.ccc)
+    {
+        l->cfg.ccc(l, ltl->index, ltl->userdata);
+    }
+    
+    ltc->reconnect();
+    
+    return 0;
+}
+
+
 
