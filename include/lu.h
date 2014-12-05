@@ -33,7 +33,7 @@ enum lutype
 #define LU_IP_SIZE 24
 
 // 用户数据
-union luuserdata
+union luuserdataparam
 {
     void * _ptr;
     uint8_t _u8;
@@ -47,6 +47,11 @@ union luuserdata
     float _fl;
     double _dl;
 };
+#define LU_MAX_USER_DATA_PARAM 4
+struct luuserdata
+{
+    luuserdataparam params[LU_MAX_USER_DATA_PARAM];
+};
 
 // 回调
 typedef int (*cb_conn_open)(lu * l, int connid, luuserdata & userdata);
@@ -56,10 +61,11 @@ typedef int (*cb_conn_close)(lu * l, int connid, luuserdata & userdata);
 struct luconfig
 {
     luconfig() : lum(&malloc), luf(&free), type(lut_tcpserver),
-		port(8888), isreconnect(true), maxconnnum(1000),
+		port(8888), maxconnnum(1000),
 		backlog(128), linger(0), isnonblocking(true), sendbuff(1024*1024), recvbuff(1024*1024),
 		socket_sendbuff(1024*256), socket_recvbuff(1024*256),
-		waittimeout(1), cco(0), ccrp(0), ccc(0)
+		waittimeout(1), cco(0), ccrp(0), ccc(0), 
+		maxrecvpacket_perframe(10000), maxpacketlen(100*1024)
     {
 		strcpy(ip, "127.0.0.1");
 	}
@@ -71,8 +77,6 @@ struct luconfig
 	// ip端口
 	char ip[LU_IP_SIZE];
 	uint16_t port;
-	// 是否重连
-	bool isreconnect;
 	// 最大连接数
 	int maxconnnum;
 	// tcp参数
@@ -92,6 +96,14 @@ struct luconfig
 	cb_conn_open cco;
 	cb_conn_recv_packet ccrp;
 	cb_conn_close ccc;
+	// 每帧处理消息数目
+	int32_t maxrecvpacket_perframe;
+	// 消息最大size
+	uint32_t maxpacketlen;
+	// 是否加密
+	bool isencrypt;
+	// 是否压缩
+	bool iscompress;
 };
 
 // 初始化
@@ -103,4 +115,26 @@ LU_API void dellu(lu * l);
 
 // 心跳
 LU_API void ticklu(lu * l);
+
+// 类型
+LU_API lutype gettypelu(lu * l);
+
+// 发送消息
+enum luerrortype
+{
+    luet_ok,
+    // 类型错误
+    luet_typeerr,
+    // 链接无效
+    luet_conninvalid,
+    // 消息太大
+    luet_msgtoobig,
+    // 缓冲区满
+    luet_sendbufffull,
+    // 压缩失败
+    luet_compressfail,
+    // 加密失败
+    luet_encryptfail,
+};
+LU_API int sendlu(lu * l, char * buffer, size_t size, int connid = -1);
 
