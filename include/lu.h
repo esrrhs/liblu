@@ -65,7 +65,8 @@ struct luconfig
 		backlog(128), linger(0), isnonblocking(true), sendbuff(1024*1024), recvbuff(1024*1024),
 		socket_sendbuff(1024*256), socket_recvbuff(1024*256),
 		waittimeout(1), cco(0), ccrp(0), ccc(0), 
-		maxrecvpacket_perframe(10000), maxpacketlen(100*1024)
+		maxrecvpacket_perframe(10000), maxpacketlen(100*1024),
+		isencrypt(true), iscompress(true)
     {
 		strcpy(ip, "127.0.0.1");
 	}

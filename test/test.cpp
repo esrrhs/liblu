@@ -80,7 +80,11 @@ int main(int argc, char *argv[])
 	ProfilerStart(((std::string)"test_" + name + ".prof").c_str());
 #endif
 #endif
+#ifdef _DEBUG
+    while (1)
+#else
     while (loopnum < loopmax)
+#endif
 	{
 	    ticklu(l);
 	}
@@ -91,6 +95,8 @@ int main(int argc, char *argv[])
 #endif
 	
 	dellu(l);
+	
+	std::cout<<"finish"<<std::endl;
 	char c;
 	std::cin >> c;
 	return 0;

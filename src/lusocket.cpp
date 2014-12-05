@@ -31,6 +31,9 @@
 #include <sys/syscall.h> 
 #include <sys/reg.h>
 #include <sys/user.h>
+#define UINT8_MAX	0xff
+#define UINT16_MAX	0xffff
+#define UINT32_MAX	0xffffffff
 #endif
 
 lutcpserver * newtcpserver(lu * l)
@@ -818,37 +821,359 @@ int on_tcpserver_close(lutcplink * ltl)
     return 0;
 }
 
+const int encrypt_key[] = {0x77073096UL, 0xee0e612cUL, 0x990951baUL, 0x076dc419UL,
+    0x706af48fUL, 0xe963a535UL, 0x9e6495a3UL, 0x0edb8832UL, 0x79dcb8a4UL,
+    0xe0d5e91eUL, 0x97d2d988UL, 0x09b64c2bUL, 0x7eb17cbdUL, 0xe7b82d07UL,
+    0x90bf1d91UL, 0x1db71064UL, 0x6ab020f2UL, 0xf3b97148UL, 0x84be41deUL,
+    0x1adad47dUL, 0x6ddde4ebUL, 0xf4d4b551UL, 0x83d385c7UL, 0x136c9856UL,
+    0x646ba8c0UL, 0xfd62f97aUL, 0x8a65c9ecUL, 0x14015c4fUL, 0x63066cd9UL};
+
 bool encrypt_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
 {
-    // TODO
-    memcpy(obuffer, buffer, size);
-    osize = size;
+	for (int i = 0; i < (int)size; i++)
+	{
+		obuffer[i] = buffer[size - 1 - i] ^ ((char*)encrypt_key)[i % sizeof(encrypt_key)];
+	}
+	osize = size;
     return true;
 }
 
 bool decrypt_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
 {
-    // TODO
-    memcpy(obuffer, buffer, size);
-    osize = size;
+	for (int i = 0; i < (int)size; i++)
+	{
+		obuffer[i] = buffer[size - 1 - i] ^ ((char*)encrypt_key)[(size - 1 - i) % sizeof(encrypt_key)];
+	}
+	osize = size;
     return true;
 }
 
+enum compresstype
+{
+	ct_normal,
+	ct_u64,
+	ct_s64,
+	ct_u32,
+	ct_s32,
+};
+
+#define MAKE_COMPRESS_HEAD(type, len) ((((uint8_t)type) << 4) | ((uint8_t)len))
+#define GET_COMPRESS_TYPE(head) (((uint8_t)head >> 4) & 0x0F)
+#define GET_COMPRESS_LEN(head) ((uint8_t)head & 0x0F)
+
+bool docompress(char * buffer, size_t size, int i, char * obuffer, size_t & oldsize, size_t & osize)
+{
+	do
+	{
+		if (i + sizeof(uint64_t) <= size)
+		{
+			uint64_t u64 = *(uint64_t*)&buffer[i];
+
+			if (u64 <= UINT8_MAX)
+			{
+				uint8_t head = MAKE_COMPRESS_HEAD(ct_u64, sizeof(uint8_t));
+				obuffer[osize] = head;
+				*(uint8_t*)&obuffer[osize + 1] = u64;
+				osize = 1 + sizeof(uint8_t);
+				oldsize = sizeof(uint64_t);
+				return true;
+			}
+			if (u64 <= UINT16_MAX)
+			{
+				uint8_t head = MAKE_COMPRESS_HEAD(ct_u64, sizeof(uint16_t));
+				obuffer[osize] = head;
+				*(uint16_t*)&obuffer[osize + 1] = u64;
+				osize = 1 + sizeof(uint16_t);
+				oldsize = sizeof(uint64_t);
+				return true;
+			}
+			if (u64 <= UINT32_MAX)
+			{
+				uint8_t head = MAKE_COMPRESS_HEAD(ct_u64, sizeof(uint32_t));
+				obuffer[osize] = head;
+				*(uint32_t*)&obuffer[osize + 1] = u64;
+				osize = 1 + sizeof(uint32_t);
+				oldsize = sizeof(uint64_t);
+				return true;
+			}
+		}
+	}
+	while(0);
+
+	do
+	{
+		if (i + sizeof(uint64_t) <= size)
+		{
+			uint64_t s64 = *(uint64_t*)&buffer[i] * -1;
+
+			if (s64 <= UINT8_MAX)
+			{
+				uint8_t head = MAKE_COMPRESS_HEAD(ct_s64, sizeof(uint8_t));
+				obuffer[osize] = head;
+				*(uint8_t*)&obuffer[osize + 1] = s64;
+				osize = 1 + sizeof(uint8_t);
+				oldsize = sizeof(uint64_t);
+				return true;
+			}
+			if (s64 <= UINT16_MAX)
+			{
+				uint8_t head = MAKE_COMPRESS_HEAD(ct_s64, sizeof(uint16_t));
+				obuffer[osize] = head;
+				*(uint16_t*)&obuffer[osize + 1] = s64;
+				osize = 1 + sizeof(uint16_t);
+				oldsize = sizeof(uint64_t);
+				return true;
+			}
+			if (s64 <= UINT32_MAX)
+			{
+				uint8_t head = MAKE_COMPRESS_HEAD(ct_s64, sizeof(uint32_t));
+				obuffer[osize] = head;
+				*(uint32_t*)&obuffer[osize + 1] = s64;
+				osize = 1 + sizeof(uint32_t);
+				oldsize = sizeof(uint64_t);
+				return true;
+			}
+		}
+	}
+	while(0);
+
+	do
+	{
+		if (i + sizeof(uint32_t) <= size)
+		{
+			uint32_t u32 = *(uint32_t*)&buffer[i];
+
+			if (u32 <= UINT8_MAX)
+			{
+				uint8_t head = MAKE_COMPRESS_HEAD(ct_u32, sizeof(uint8_t));
+				obuffer[osize] = head;
+				*(uint8_t*)&obuffer[osize + 1] = u32;
+				osize = 1 + sizeof(uint8_t);
+				oldsize = sizeof(uint32_t);
+				return true;
+			}
+			if (u32 <= UINT16_MAX)
+			{
+				uint8_t head = MAKE_COMPRESS_HEAD(ct_u32, sizeof(uint16_t));
+				obuffer[osize] = head;
+				*(uint16_t*)&obuffer[osize + 1] = u32;
+				osize = 1 + sizeof(uint16_t);
+				oldsize = sizeof(uint32_t);
+				return true;
+			}
+		}
+	}
+	while(0);
+
+	do
+	{
+		if (i + sizeof(uint32_t) <= size)
+		{
+			uint32_t s32 = *(uint32_t*)&buffer[i] * -1;
+
+			if (s32 <= UINT8_MAX)
+			{
+				uint8_t head = MAKE_COMPRESS_HEAD(ct_s32, sizeof(uint8_t));
+				obuffer[osize] = head;
+				*(uint8_t*)&obuffer[osize + 1] = s32;
+				osize = 1 + sizeof(uint8_t);
+				oldsize = sizeof(uint32_t);
+				return true;
+			}
+			if (s32 <= UINT16_MAX)
+			{
+				uint8_t head = MAKE_COMPRESS_HEAD(ct_s32, sizeof(uint16_t));
+				obuffer[osize] = head;
+				*(uint16_t*)&obuffer[osize + 1] = s32;
+				osize = 1 + sizeof(uint16_t);
+				oldsize = sizeof(uint32_t);
+				return true;
+			}
+		}
+	}
+	while(0);
+
+	return false;
+}
+
+bool dodecompress(char * buffer, size_t size, int i, char * obuffer, size_t & oldsize, size_t & csize)
+{
+	uint8_t head = buffer[i];
+	int type = GET_COMPRESS_TYPE(head);
+	int len = GET_COMPRESS_LEN(head);
+	switch (type)
+	{
+	case ct_normal:
+		{
+        	if (len >= 16 || len <= 0)
+        	{
+        		return false;
+        	}
+			memcpy(obuffer, &buffer[i + 1], len);
+			oldsize = len;
+			csize = 1 + len;
+		}
+		break;
+	case ct_u64:
+		{
+			uint64_t data;
+			if (len == sizeof(uint32_t))
+			{
+				data = *(uint32_t*)&buffer[i + 1];
+			}
+			else if (len == sizeof(uint16_t))
+			{
+				data = *(uint16_t*)&buffer[i + 1];
+			}
+			else if (len == sizeof(uint8_t))
+			{
+				data = *(uint8_t*)&buffer[i + 1];
+			}
+			else
+			{
+				return false;
+			}
+			*(uint64_t*)obuffer = data;
+			oldsize = sizeof(uint64_t);
+			csize = 1 + len;
+		}
+		break;
+	case ct_s64:
+		{
+			uint64_t data;
+			if (len == sizeof(uint32_t))
+			{
+				data = *(uint32_t*)&buffer[i + 1] * -1;
+			}
+			else if (len == sizeof(uint16_t))
+			{
+				data = *(uint16_t*)&buffer[i + 1] * -1;
+			}
+			else if (len == sizeof(uint8_t))
+			{
+				data = *(uint8_t*)&buffer[i + 1] * -1;
+			}
+			else
+			{
+				return false;
+			}
+			*(uint64_t*)obuffer = data;
+			oldsize = sizeof(uint64_t);
+			csize = 1 + len;
+		}
+		break;
+	case ct_u32:
+		{
+			uint32_t data;
+			if (len == sizeof(uint16_t))
+			{
+				data = *(uint16_t*)&buffer[i + 1];
+			}
+			else if (len == sizeof(uint8_t))
+			{
+				data = *(uint8_t*)&buffer[i + 1];
+			}
+			else
+			{
+				return false;
+			}
+			*(uint32_t*)obuffer = data;
+			oldsize = sizeof(uint32_t);
+			csize = 1 + len;
+		}
+		break;
+	case ct_s32:
+		{
+			uint32_t data;
+			if (len == sizeof(uint16_t))
+			{
+				data = *(uint16_t*)&buffer[i + 1] * -1;
+			}
+			else if (len == sizeof(uint8_t))
+			{
+				data = *(uint8_t*)&buffer[i + 1] * -1;
+			}
+			else
+			{
+				return false;
+			}
+			*(uint32_t*)obuffer = data;
+			oldsize = sizeof(uint32_t);
+			csize = 1 + len;
+		}
+		break;
+	default:
+		return false;
+	}
+	return true;
+}
 
 bool compress_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
 {
-    // TODO
-    memcpy(obuffer, buffer, size);
-    osize = size;
-    return true;
+	char tmpbuff[sizeof(uint64_t)];
+	osize = 0;
+	int i = 0;
+	while (i < (int)size)
+	{
+		size_t oldsize = 0;
+		size_t csize = 0;
+		int normallen = 0;
+		for (int j = 0; j < 15 && i + normallen < (int)size; j++)
+		{
+			if (docompress(buffer, size, i + normallen, tmpbuff, oldsize, csize))
+			{
+				break;
+			}
+			normallen++;
+		}
+		if (normallen)
+		{
+			if (osize + 1 + normallen > omaxsize)
+			{
+				return false;
+			}
+			obuffer[osize] = MAKE_COMPRESS_HEAD(ct_normal, normallen);
+			osize++;
+			memcpy(obuffer + osize, buffer + i, normallen);
+			osize += normallen;
+			i += normallen;
+		}
+		if (csize)
+		{
+			if (osize + csize > omaxsize)
+			{
+				return false;
+			}
+			memcpy(obuffer + osize, tmpbuff, csize);
+			osize += csize;
+			i += oldsize;
+		}
+	}
+	return true;
 }
 
 bool decompress_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
 {
-    // TODO
-    memcpy(obuffer, buffer, size);
-    osize = size;
-    return true;
+	char tmpbuff[16];
+	osize = 0;
+	int i = 0;
+	while (i < (int)size)
+	{
+		size_t oldsize = 0;
+		size_t csize = 0;
+		if (!dodecompress(buffer, size, i, tmpbuff, oldsize, csize))
+		{
+			return false;
+		}
+		if (osize + oldsize > omaxsize)
+		{
+			return false;
+		}
+		memcpy(obuffer + osize, tmpbuff, oldsize);
+		osize += oldsize;
+		i += csize;
+	}
+	return true;
 }
 
 int pack_packet(lu * l, circle_buffer * cb, int connid, char * buffer, size_t size)
@@ -860,29 +1185,13 @@ int pack_packet(lu * l, circle_buffer * cb, int connid, char * buffer, size_t si
     }
 
     LULOG("pack_packet %d buffer size(%d) size(%d)", connid, (int)cb->size(), (int)size);
-        
-    cb->store();
-    
-    msgheader head;
-    head.magic = HEAD_MAGIC;
-    if (l->cfg.isencrypt)
-    {
-        head.flag = SET_ENCRYPT(head.flag);
-    }
-    if (l->cfg.iscompress)
-    {
-        head.flag = SET_COMPRESS(head.flag);
-    }
-    head.size = size;
 
-    // 写包头
-    if (!cb->write((const char *)&head, sizeof(head)))
+    if (!cb->can_write(sizeof(msgheader) + size))
     {
-        cb->restore();
-        LULOG("pack_packet %d buffer full(%d) size(%d)", connid, (int)cb->size(), (int)size);
+        LULOG("pack_packet %d not enough size(%d) buffersize(%d)", connid, (int)size, (int)cb->size());
         return luet_sendbufffull;
     }
-
+    
     char * srcbuffer = buffer;
     size_t srcdatasize = size;
     char * destbuffer = l->recvpacketbuffer;
@@ -892,7 +1201,6 @@ int pack_packet(lu * l, circle_buffer * cb, int connid, char * buffer, size_t si
     {
         if (!compress_packet(srcbuffer, srcdatasize, destbuffer, l->cfg.maxpacketlen, destdatasize))
         {
-            cb->restore();
             LUERR("pack_packet %d compress err size(%d)", connid, (int)srcdatasize);
             assert(0);
             return luet_compressfail;
@@ -907,7 +1215,6 @@ int pack_packet(lu * l, circle_buffer * cb, int connid, char * buffer, size_t si
     {
         if (!encrypt_packet(srcbuffer, srcdatasize, destbuffer, l->cfg.maxpacketlen, destdatasize))
         {
-            cb->restore();
             LUERR("pack_packet %d encrypt err size(%d)", connid, (int)srcdatasize);
             assert(0);
             return luet_encryptfail;
@@ -915,6 +1222,29 @@ int pack_packet(lu * l, circle_buffer * cb, int connid, char * buffer, size_t si
         LULOG("pack_packet %d decrypt new size(%d) oldsize(%d)", connid, (int)destdatasize, (int)srcdatasize);
         luswap(srcbuffer, destbuffer);
         luswap(srcdatasize, destdatasize);
+    }
+
+    cb->store();
+
+    // 写
+    msgheader head;
+    head.magic = HEAD_MAGIC;
+    if (l->cfg.isencrypt)
+    {
+        head.flag = SET_ENCRYPT(head.flag);
+    }
+    if (l->cfg.iscompress)
+    {
+        head.flag = SET_COMPRESS(head.flag);
+    }
+    head.size = srcdatasize;
+    
+    // 写包头
+    if (!cb->write((const char *)&head, sizeof(head)))
+    {
+        cb->restore();
+        LULOG("pack_packet %d buffer full(%d) size(%d)", connid, (int)cb->size(), (int)size);
+        return luet_sendbufffull;
     }
 
     // 写数据
