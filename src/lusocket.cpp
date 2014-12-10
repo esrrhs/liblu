@@ -829,24 +829,33 @@ const uint32_t encrypt_key[] = {
     0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7, 0x136c9856,
     0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9};
 
+size_t encrypt_key_hash(size_t i)
+{
+	ldiv_t _Qrem = ldiv((long)(size_t)i, 127773);
+	_Qrem.rem = 16807 * _Qrem.rem - 2836 * _Qrem.quot;
+	if (_Qrem.rem < 0)
+		_Qrem.rem += 2147483647;
+	return ((size_t)_Qrem.rem);
+}
+
 bool encrypt_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
 {
 	for (int i = 0; i < (int)size; i++)
 	{
-		obuffer[i] = buffer[size - 1 - i] ^ ((char*)encrypt_key)[i % sizeof(encrypt_key)];
+		obuffer[i] = buffer[size - 1 - i] ^ ((char*)encrypt_key)[encrypt_key_hash(i + size) % sizeof(encrypt_key)];
 	}
 	osize = size;
-    return true;
+	return true;
 }
 
 bool decrypt_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
 {
 	for (int i = 0; i < (int)size; i++)
 	{
-		obuffer[i] = buffer[size - 1 - i] ^ ((char*)encrypt_key)[(size - 1 - i) % sizeof(encrypt_key)];
+		obuffer[i] = buffer[size - 1 - i] ^ ((char*)encrypt_key)[encrypt_key_hash(size - 1 - i + size) % sizeof(encrypt_key)];
 	}
 	osize = size;
-    return true;
+	return true;
 }
 
 enum compresstype
@@ -856,14 +865,50 @@ enum compresstype
 	ct_s64,
 	ct_u32,
 	ct_s32,
+	ct_zero,
+	ct_same,
 };
 
-#define MAKE_COMPRESS_HEAD(type, len) ((((uint8_t)type) << 4) | ((uint8_t)len))
-#define GET_COMPRESS_TYPE(head) (((uint8_t)head >> 4) & 0x0F)
-#define GET_COMPRESS_LEN(head) ((uint8_t)head & 0x0F)
+#define MAKE_COMPRESS_HEAD(type, len) ((((uint8_t)type) << 5) | ((uint8_t)len))
+#define GET_COMPRESS_TYPE(head) (((uint8_t)head >> 5) & 0x1F)
+#define GET_COMPRESS_LEN(head) ((uint8_t)head & 0x1F)
+
+#define COMPRESS_LEN_MAX 32
 
 bool docompress(char * buffer, size_t size, int i, char * obuffer, size_t & oldsize, size_t & osize)
 {
+    do
+    {
+        char begindata = buffer[i];
+        int samelen = 0;
+        for (int j = 0; j + i < (int)size && j < COMPRESS_LEN_MAX - 1; j++)
+        {   
+            if (buffer[j + i] != begindata)
+            {
+                break;
+            }
+            samelen++;
+        }
+        if (begindata == 0 && samelen >= 8)
+        {
+			uint8_t head = MAKE_COMPRESS_HEAD(ct_zero, samelen);
+            obuffer[osize] = head;
+            osize = 1;
+            oldsize = samelen;
+			return true;
+        }
+        if (begindata != 0 && samelen > 2)
+        {
+			uint8_t head = MAKE_COMPRESS_HEAD(ct_same, samelen);
+            obuffer[osize] = head;
+            obuffer[osize + 1] = begindata;
+            osize = 2;
+            oldsize = samelen;
+		    return true;
+        }
+    }
+    while(0);
+    
 	do
 	{
 		if (i + sizeof(uint64_t) <= size)
@@ -1004,9 +1049,31 @@ bool dodecompress(char * buffer, size_t size, int i, char * obuffer, size_t & ol
 	int len = GET_COMPRESS_LEN(head);
 	switch (type)
 	{
+	case ct_zero:
+	    {
+        	if (len >= COMPRESS_LEN_MAX || len <= 0)
+        	{
+        		return false;
+        	}
+			memset(obuffer, 0, len);
+			oldsize = len;
+			csize = 1;
+	    }
+	    break;
+	case ct_same:
+	    {
+        	if (len >= COMPRESS_LEN_MAX || len <= 0)
+        	{
+        		return false;
+        	}
+			memset(obuffer, buffer[i + 1], len);
+			oldsize = len;
+			csize = 2;
+	    }
+	    break;
 	case ct_normal:
 		{
-        	if (len >= 16 || len <= 0)
+        	if (len >= COMPRESS_LEN_MAX || len <= 0)
         	{
         		return false;
         	}
@@ -1119,7 +1186,7 @@ bool compress_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize
 		size_t oldsize = 0;
 		size_t csize = 0;
 		int normallen = 0;
-		for (int j = 0; j < 15 && i + normallen < (int)size; j++)
+		for (int j = 0; j < COMPRESS_LEN_MAX - 1 && i + normallen < (int)size; j++)
 		{
 			if (docompress(buffer, size, i + normallen, tmpbuff, oldsize, csize))
 			{
@@ -1155,7 +1222,7 @@ bool compress_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize
 
 bool decompress_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
 {
-	char tmpbuff[16];
+	char tmpbuff[COMPRESS_LEN_MAX];
 	osize = 0;
 	int i = 0;
 	while (i < (int)size)
