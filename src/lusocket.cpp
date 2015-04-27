@@ -61,11 +61,11 @@ lutcpserver * newtcpserver(lu * l)
 	_sockaddr.sin_port = htons(l->cfg.port);
 	if (strlen(l->cfg.ip) > 0)
 	{
-		_sockaddr.sin_addr.s_addr = inet_addr(l->cfg.ip);
+		_sockaddr.sin_addr.s_addr = htonl(l->cfg.ip);
 	}
 	else
 	{
-		_sockaddr.sin_addr.s_addr = inet_addr(INADDR_ANY);
+		_sockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	}
 	int32_t ret = ::bind(ts->s, (const sockaddr *)&_sockaddr, sizeof(_sockaddr));
 	if (ret != 0)
