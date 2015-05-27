@@ -61,7 +61,7 @@ lutcpserver * newtcpserver(lu * l)
 	_sockaddr.sin_port = htons(l->cfg.port);
 	if (strlen(l->cfg.ip) > 0)
 	{
-		_sockaddr.sin_addr.s_addr = htonl(l->cfg.ip);
+		_sockaddr.sin_addr.s_addr = inet_addr(l->cfg.ip);
 	}
 	else
 	{
