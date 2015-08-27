@@ -34,9 +34,9 @@ struct lu;
 struct lutcplink;
 struct epoll_event;
 typedef int (*cb_link_err)(lutcplink * ltl);
-typedef int (*cb_link_in)(lutcplink * ltl);
-typedef int (*cb_link_out)(lutcplink * ltl);
-typedef int (*cb_link_close)(lutcplink * ltl);
+typedef int (*cb_link_in)(lutcplink * ltl, int & reason);
+typedef int (*cb_link_out)(lutcplink * ltl, int & reason);
+typedef int (*cb_link_close)(lutcplink * ltl, int reason);
 // window下仅供调试
 struct luselector
 {
@@ -138,18 +138,20 @@ int sendtcpserver(lutcpserver * lts, char * buffer, size_t size, int connid);
 int sendtcpclient(lutcpclient * ltc, char * buffer, size_t size, int connid);
 
 int on_tcpserver_err(lutcplink * ltl);
-int on_tcpserver_in(lutcplink * ltl);
-int on_tcpserver_out(lutcplink * ltl);
+int on_tcpserver_in(lutcplink * ltl, int & reason);
+int on_tcpserver_out(lutcplink * ltl, int & reason);
 int on_tcpserver_accept(lutcplink * ltl);
-int on_tcpserver_close(lutcplink * ltl);
+int on_tcpserver_close(lutcplink * ltl, int reason);
 
 int on_tcpclient_err(lutcplink * ltl);
-int on_tcpclient_in(lutcplink * ltl);
-int on_tcpclient_out(lutcplink * ltl);
-int on_tcpclient_close(lutcplink * ltl);
+int on_tcpclient_in(lutcplink * ltl, int & reason);
+int on_tcpclient_out(lutcplink * ltl, int & reason);
+int on_tcpclient_close(lutcplink * ltl, int reason);
 
 bool set_socket_nonblocking(socket_t s, bool on);
 bool set_socket_linger(socket_t s, uint32_t lingertime);
+bool set_socket_nodelay(socket_t s, bool isnodelay);
+bool set_socket_keepalive(socket_t s, bool keepalive, int keepidle, int keepinterval, int keepcount);
 void close_socket(socket_t s);
 
 bool encrypt_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize);

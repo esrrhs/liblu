@@ -56,13 +56,16 @@ struct luuserdata
 // 回调
 typedef int (*cb_conn_open)(lu * l, int connid, luuserdata & userdata);
 typedef int (*cb_conn_recv_packet)(lu * l, int connid, const char * buff, size_t size, luuserdata & userdata);
-typedef int (*cb_conn_close)(lu * l, int connid, luuserdata & userdata);
+typedef int (*cb_conn_close)(lu * l, int connid, luuserdata & userdata, int reason);
 
 struct luconfig
 {
     luconfig() : lum(&malloc), luf(&free), type(lut_tcpserver),
 		port(8888), maxconnnum(1000),
-		backlog(128), linger(0), isnonblocking(true), sendbuff(1024*1024), recvbuff(1024*1024),
+		backlog(128), linger(0), 
+		iskeepalive(true), keepidle(60), keepinterval(5), keepcount(3),
+		isnonblocking(true), isnodelay(true),
+		sendbuff(1024*1024), recvbuff(1024*1024),
 		socket_sendbuff(1024*256), socket_recvbuff(1024*256),
 		waittimeout(1), cco(0), ccrp(0), ccc(0), 
 		maxrecvpacket_perframe(10000), maxpacketlen(100*1024),
@@ -83,8 +86,15 @@ struct luconfig
 	// tcp参数
 	int backlog;
 	int linger;
+	// 心跳
+	bool iskeepalive;
+	int keepidle;
+	int keepinterval;
+	int keepcount;
 	// 非阻塞
 	bool isnonblocking;
+	// 无延迟
+	bool isnodelay;
 	// 发送接收缓冲区
 	int sendbuff;
 	int recvbuff;
@@ -137,5 +147,8 @@ enum luerrortype
     // 加密失败
     luet_encryptfail,
 };
+
+// 发送消息
 LU_API int sendlu(lu * l, char * buffer, size_t size, int connid = -1);
+
 

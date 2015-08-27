@@ -32,9 +32,16 @@ int on_conn_recv_packet(lu * l, int connid, const char * buff, size_t size, luus
     return 0;
 }
 
-int on_conn_close(lu * l, int connid, luuserdata & userdata)
+int on_conn_close(lu * l, int connid, luuserdata & userdata, int reason)
 {
-    printf("on_conn_close %d\n", connid);
+#ifdef WIN32
+	char tmp[100];
+	strerror_s(tmp, reason);
+    printf("on_conn_close %d %d %s\n", connid, reason, tmp);
+#else
+	char tmp[100];
+	printf("on_conn_close %d %d %s\n", connid, reason, strerror_r(reason, tmp, sizeof(tmp));
+#endif
     loopnum = loopmax;
     return 0;
 }
