@@ -183,6 +183,12 @@ bool lutcpclient::reconnect()
 	// 非阻塞
     set_socket_nonblocking(s, l->cfg.isnonblocking);
 
+	// no delay
+	set_socket_nodelay(s, l->cfg.isnodelay);
+
+	// keep alive
+	set_socket_keepalive(s, l->cfg.iskeepalive, l->cfg.keepidle, l->cfg.keepinterval, l->cfg.keepcount);
+
 	// linger
     set_socket_linger(s, l->cfg.linger);
 
@@ -268,6 +274,46 @@ bool set_socket_linger(socket_t s, uint32_t lingertime)
 	so_linger.l_onoff = true;
 	so_linger.l_linger = lingertime;
 	return ::setsockopt(s, SOL_SOCKET, SO_LINGER, (const char *)&so_linger, sizeof(so_linger)) == 0;
+}
+
+bool set_socket_nodelay(socket_t s, bool isnodelay)
+{
+	bool boptval = isnodelay;
+	int noptlen = sizeof(bool);
+	return ::setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (const char *)&boptval, noptlen) == 0;
+}
+
+bool set_socket_keepalive(socket_t s, bool keepalive, int keepidle, int keepinterval, int keepcount)
+{
+	// 开启keepalive属性
+	// 如果该连接在keepidle秒内无数据往来，则进行探测
+	// 探测发包间隔为keepinterval秒
+	// keepcount尝试探测的次数。如果第一次探测包就收到响应，则不再探测了
+
+#ifndef WIN32
+	int nkeepalive = (int)keepalive;
+	if (setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, (void *)&nkeepalive, sizeof(nkeepalive)) != 0)
+	{
+		return false;
+	}
+
+	if (setsockopt(s, SOL_TCP, TCP_KEEPIDLE, (void *)&keepidle, sizeof(keepidle)) != 0)
+	{
+		return false;
+	}
+
+	if (setsockopt(s, SOL_TCP, TCP_KEEPINTVL, (void *)&keepinterval, sizeof(keepinterval)) != 0)
+	{
+		return false;
+	}
+
+	if (setsockopt(s, SOL_TCP, TCP_KEEPCNT, (void *)&keepcount, sizeof(keepcount)) != 0)
+	{
+		return false;
+	}
+#endif
+
+	return true;
 }
 
 void close_socket(socket_t s)
@@ -513,7 +559,6 @@ bool luselector::add(lutcplink * ltl)
 	ev.data.ptr = ltl;
 	if (::epoll_ctl(epollfd, EPOLL_CTL_ADD, ltl->s, &ev) != 0) 
 	{
-	    assert(0);
 	    return false;
 	}
     return true;
@@ -528,7 +573,6 @@ bool luselector::del(lutcplink * ltl)
 #else
 	if (::epoll_ctl(epollfd, EPOLL_CTL_DEL, ltl->s, 0) == -1) 
 	{
-	    assert(0);
 		return false;
 	}
 	return true;
@@ -578,26 +622,31 @@ bool luselector::select()
 		lutcplink * ltl = it->second;
 		if (FD_ISSET(s, &exceptfds) != 0)
 		{
+			FD_CLR(s, &exceptfds);
 			cbe(ltl);
 			delvec.push_back(ltl);
-			cbc(ltl);
+			cbc(ltl, -1);
 			continue;
 		}
 		if (FD_ISSET(s, &readfds) != 0)
 		{
-			if (cbi(ltl) != 0)
+			FD_CLR(s, &readfds);
+			int reason = 0;
+			if (cbi(ltl, reason) != 0)
 			{
 				delvec.push_back(ltl);
-				cbc(ltl);
+				cbc(ltl, reason);
 				continue;
 			}
 		}
 		if (FD_ISSET(s, &writefds) != 0)
 		{
-			if (cbo(ltl) != 0)
+			FD_CLR(s, &writefds);
+			int reason = 0;
+			if (cbo(ltl, reason) != 0)
 			{
 				delvec.push_back(ltl);
-				cbc(ltl);
+				cbc(ltl, reason);
 				continue;
 			}
 		}
@@ -625,28 +674,35 @@ bool luselector::select()
 	{
 	    epoll_event & ev = events[i];
 	    lutcplink * ltl = (lutcplink *)ev.data.ptr;
-	    if(EPOLLERR & ev.events)
-	    {
-	        cbe(ltl);
-	        del(ltl);
-	        cbc(ltl);
+		uint32_t e = ev.events;
+		if (EPOLLRDHUP & e)
+		{
+			cbe(ltl);
+			del(ltl);
+			cbc(ltl, -1);
 			continue;
-	    }
-	    if(EPOLLIN & ev.events)
+		}
+	    if ((EPOLLERR | EPOLLHUP) & e)
 	    {
-	        if (cbi(ltl) != 0)
+			e = EPOLLIN | EPOLLOUT;
+	    }
+	    if (EPOLLIN & e)
+	    {
+			int reason = 0;
+	        if (cbi(ltl, reason) != 0)
 	        {
 	            del(ltl);
-				cbc(ltl);
+				cbc(ltl, reason);
 				continue;
 	        }
 	    }
-	    if(EPOLLOUT & ev.events)
+	    if (EPOLLOUT & e)
 	    {
-	        if (cbo(ltl) != 0)
+			int reason = 0;
+	        if (cbo(ltl, reason) != 0)
 	        {
 	            del(ltl);
-				cbc(ltl);
+				cbc(ltl, reason);
 				continue;
 	        }
 	    }
@@ -682,7 +738,7 @@ int on_tcpserver_err(lutcplink * ltl)
     return -1;
 }
 
-int on_tcpserver_in(lutcplink * ltl)
+int on_tcpserver_in(lutcplink * ltl, int & reason)
 {
     LULOG("on_tcpserver_in %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
     
@@ -707,11 +763,19 @@ int on_tcpserver_in(lutcplink * ltl)
 
     LULOG("on_tcpserver_in recv size(%d) %d from %s:%u", len, ltl->s, ltl->peerip, ltl->peerport);
         
-	if (len == 0 || len < 0)
+	if (len == 0)
 	{
-		if (GET_NET_ERROR != NET_BLOCK_ERROR && GET_NET_ERROR != NET_BLOCK_ERROR_EX)
+		LULOG("on_tcpserver_in socket close %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+		return -1;
+	}
+	else if (len < 0)
+	{
+		reason = GET_NET_ERROR;
+		if (reason != NET_BLOCK_ERROR &&
+			reason != NET_BLOCK_ERROR_EX &&
+			reason != NET_INTR_ERROR)
 		{
-            LULOG("on_tcpserver_in socket error %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+            LULOG("on_tcpserver_in socket error reason %d %d from %s:%u", reason, ltl->s, ltl->peerip, ltl->peerport);
 		    return -1;
 		}
 	}
@@ -747,6 +811,8 @@ int on_tcpserver_accept(lutcplink * ltl)
 	::setsockopt(s, SOL_SOCKET, SO_SNDBUF, (const char *)&l->cfg.socket_sendbuff, sizeof(int));
 
     set_socket_nonblocking(s, l->cfg.isnonblocking);
+	set_socket_nodelay(s, l->cfg.isnodelay);
+	set_socket_keepalive(s, l->cfg.iskeepalive, l->cfg.keepidle, l->cfg.keepinterval, l->cfg.keepcount);
     set_socket_linger(s, l->cfg.linger);
 
 	sockaddr_in _local_sockaddr;
@@ -772,7 +838,7 @@ int on_tcpserver_accept(lutcplink * ltl)
     return 0;
 }
 
-int on_tcpserver_out(lutcplink * ltl)
+int on_tcpserver_out(lutcplink * ltl, int & reason)
 {    
     if (ltl->sendbuff.empty())
     {
@@ -787,11 +853,19 @@ int on_tcpserver_out(lutcplink * ltl)
 
     LULOG("on_tcpserver_out send size(%d) %d to %s:%u", len, ltl->s, ltl->peerip, ltl->peerport);
     
-    if (len == 0 || len < 0)
+	if (len == 0)
+	{
+		LULOG("on_tcpserver_out socket close %d to %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+		return -1;
+	}
+    else if (len < 0)
     {
-    	if (GET_NET_ERROR != NET_BLOCK_ERROR && GET_NET_ERROR != NET_BLOCK_ERROR_EX)
+		reason = GET_NET_ERROR;
+    	if (reason != NET_BLOCK_ERROR &&
+			reason != NET_BLOCK_ERROR_EX &&
+			reason != NET_INTR_ERROR)
     	{
-            LULOG("on_tcpserver_out socket error %d to %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+            LULOG("on_tcpserver_out socket error reason %d %d to %s:%u", reason, ltl->s, ltl->peerip, ltl->peerport);
     		return -1;
     	}
     }
@@ -803,9 +877,9 @@ int on_tcpserver_out(lutcplink * ltl)
     return 0;
 }
 
-int on_tcpserver_close(lutcplink * ltl)
+int on_tcpserver_close(lutcplink * ltl, int reason)
 {
-    LULOG("on_tcpserver_close %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+    LULOG("on_tcpserver_close reason %d %d from %s:%u", reason, ltl->s, ltl->peerip, ltl->peerport);
 
     lu * l = ltl->l;
     lutcpserver * lts = l->ts;
@@ -813,7 +887,7 @@ int on_tcpserver_close(lutcplink * ltl)
     // 上层的回调
     if (l->cfg.ccc)
     {
-        l->cfg.ccc(l, ltl->index, ltl->userdata);
+        l->cfg.ccc(l, ltl->index, ltl->userdata, reason);
     }
     
     lts->dealloc_tcplink(ltl);
@@ -1363,7 +1437,7 @@ int on_tcpclient_err(lutcplink * ltl)
     return -1;
 }
 
-int on_tcpclient_in(lutcplink * ltl)
+int on_tcpclient_in(lutcplink * ltl, int & reason)
 {
     LULOG("on_tcpclient_in %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
     
@@ -1378,11 +1452,19 @@ int on_tcpclient_in(lutcplink * ltl)
 
     LULOG("on_tcpclient_in recv size(%d) %d from %s:%u", len, ltl->s, ltl->peerip, ltl->peerport);
         
-	if (len == 0 || len < 0)
+	if (len == 0)
 	{
-		if (GET_NET_ERROR != NET_BLOCK_ERROR && GET_NET_ERROR != NET_BLOCK_ERROR_EX)
+		LULOG("on_tcpclient_in socket close %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+		return -1;
+	}
+	else if (len < 0)
+	{
+		reason = GET_NET_ERROR;
+		if (reason != NET_BLOCK_ERROR &&
+			reason != NET_BLOCK_ERROR_EX &&
+			reason != NET_INTR_ERROR)
 		{
-            LULOG("on_tcpclient_in socket error %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+            LULOG("on_tcpclient_in socket error reason %d %d from %s:%u", reason, ltl->s, ltl->peerip, ltl->peerport);
 		    return -1;
 		}
 	}
@@ -1394,7 +1476,7 @@ int on_tcpclient_in(lutcplink * ltl)
     return 0;
 }
 
-int on_tcpclient_out(lutcplink * ltl)
+int on_tcpclient_out(lutcplink * ltl, int & reason)
 {
     if (ltl->sendbuff.empty())
     {
@@ -1409,11 +1491,19 @@ int on_tcpclient_out(lutcplink * ltl)
 
     LULOG("on_tcpclient_out send size(%d) %d to %s:%u", len, ltl->s, ltl->peerip, ltl->peerport);
     
-    if (len == 0 || len < 0)
+	if (len == 0)
+	{
+		LULOG("on_tcpclient_out socket close %d to %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+		return -1;
+	}
+    else if (len < 0)
     {
-    	if (GET_NET_ERROR != NET_BLOCK_ERROR && GET_NET_ERROR != NET_BLOCK_ERROR_EX)
+		reason = GET_NET_ERROR;
+    	if (reason != NET_BLOCK_ERROR &&
+			reason != NET_BLOCK_ERROR_EX &&
+			reason != NET_INTR_ERROR)
     	{
-            LULOG("on_tcpclient_out socket error %d to %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+            LULOG("on_tcpclient_out socket error reason %d %d to %s:%u", reason, ltl->s, ltl->peerip, ltl->peerport);
     		return -1;
     	}
     }
@@ -1425,9 +1515,9 @@ int on_tcpclient_out(lutcplink * ltl)
     return 0;
 }
 
-int on_tcpclient_close(lutcplink * ltl)
+int on_tcpclient_close(lutcplink * ltl, int reason)
 {
-    LULOG("on_tcpclient_close %d from %s:%u", ltl->s, ltl->peerip, ltl->peerport);
+    LULOG("on_tcpclient_close reason %d %d from %s:%u", reason, ltl->s, ltl->peerip, ltl->peerport);
 
     lu * l = ltl->l;
     lutcpclient * ltc = l->tc;
@@ -1435,7 +1525,7 @@ int on_tcpclient_close(lutcplink * ltl)
     // 上层的回调
     if (l->cfg.ccc)
     {
-        l->cfg.ccc(l, ltl->index, ltl->userdata);
+        l->cfg.ccc(l, ltl->index, ltl->userdata, reason);
     }
     
     ltc->reconnect();
