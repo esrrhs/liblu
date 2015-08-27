@@ -137,6 +137,7 @@ void deltcpserver(lutcpserver * lts)
     }
 	safelufree(l, lts->ltls);
 	close_socket(lts->s);
+	lts->s = -1;
 	safelufree(l, lts);
 }
 
@@ -491,6 +492,7 @@ void lutcplink::ini(lu * _l, int _index)
 void lutcplink::fini()
 {
     close_socket(s);
+	s = -1;
     sendbuff.fini();
     recvbuff.fini();
 }
@@ -612,19 +614,21 @@ bool luselector::select()
 
 	if (ret < 0)
 	{
+		int err = GET_NET_ERROR;
 		return false;
 	}
 	
-	std::vector<lutcplink *> delvec;
-	for (lutcplinkmap::iterator it = (*ltlmap).begin(); it != (*ltlmap).end(); it++)
+	for (lutcplinkmap::iterator it = (*ltlmap).begin(); it != (*ltlmap).end();)
 	{
-		socket_t s = it->first;
-		lutcplink * ltl = it->second;
+		lutcplinkmap::iterator itbak = it;
+		it++;
+		socket_t s = itbak->first;
+		lutcplink * ltl = itbak->second;
 		if (FD_ISSET(s, &exceptfds) != 0)
 		{
 			FD_CLR(s, &exceptfds);
 			cbe(ltl);
-			delvec.push_back(ltl);
+			del(ltl);
 			cbc(ltl, -1);
 			continue;
 		}
@@ -634,7 +638,7 @@ bool luselector::select()
 			int reason = 0;
 			if (cbi(ltl, reason) != 0)
 			{
-				delvec.push_back(ltl);
+				del(ltl);
 				cbc(ltl, reason);
 				continue;
 			}
@@ -645,16 +649,11 @@ bool luselector::select()
 			int reason = 0;
 			if (cbo(ltl, reason) != 0)
 			{
-				delvec.push_back(ltl);
+				del(ltl);
 				cbc(ltl, reason);
 				continue;
 			}
 		}
-	}
-
-	for (int i = 0; i < (int)delvec.size(); i++)
-	{
-		del(delvec[i]);
 	}
 
 	return true;
