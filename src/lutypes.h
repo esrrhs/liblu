@@ -40,10 +40,12 @@ typedef int socklen_t;
 	#define GET_NET_ERROR WSAGetLastError()
 	#define NET_BLOCK_ERROR WSAEWOULDBLOCK
 	#define NET_BLOCK_ERROR_EX WSAEWOULDBLOCK
+	#define NET_INTR_ERROR WSAEINTR
 #else
 	#define GET_NET_ERROR errno
 	#define NET_BLOCK_ERROR EWOULDBLOCK
 	#define NET_BLOCK_ERROR_EX EAGAIN
+	#define NET_INTR_ERROR EINTR
 #endif
 
 #define LUMIN(a, b) ((a) < (b) ? (a) : (b))
