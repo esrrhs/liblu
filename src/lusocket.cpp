@@ -31,7 +31,6 @@
 #include <sys/syscall.h> 
 #include <sys/reg.h>
 #include <sys/user.h>
-#include <linux/tcp.h>
 #include <netinet/tcp.h>
 #define UINT8_MAX	0xff
 #define UINT16_MAX	0xffff
