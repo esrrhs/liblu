@@ -40,7 +40,7 @@ int on_conn_close(lu * l, int connid, luuserdata & userdata, int reason)
     printf("on_conn_close %d %d %s\n", connid, reason, tmp);
 #else
 	char tmp[100];
-	printf("on_conn_close %d %d %s\n", connid, reason, strerror_r(reason, tmp, sizeof(tmp));
+	printf("on_conn_close %d %d %s\n", connid, reason, strerror_r(reason, tmp, sizeof(tmp)));
 #endif
     loopnum = loopmax;
     return 0;
