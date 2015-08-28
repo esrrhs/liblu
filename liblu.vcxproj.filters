@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="include">
+      <UniqueIdentifier>{238c2f78-8420-47a4-86d7-7cd6e2a2b033}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src">
+      <UniqueIdentifier>{df80a347-78be-47b7-bec2-e7b66be9ab3f}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\lu.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lusocket.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lutypes.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\circle_buffer.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lustack.h">
+      <Filter>src</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\lu.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lusocket.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lutypes.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
