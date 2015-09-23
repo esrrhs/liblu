@@ -280,8 +280,8 @@ bool set_socket_linger(socket_t s, uint32_t lingertime)
 
 bool set_socket_nodelay(socket_t s, bool isnodelay)
 {
-	bool boptval = isnodelay;
-	int noptlen = sizeof(bool);
+	int boptval = isnodelay ? 1 : 0;
+	int noptlen = sizeof(int);
 	return ::setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (const char *)&boptval, noptlen) == 0;
 }
 
