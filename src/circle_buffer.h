@@ -90,6 +90,11 @@ struct circle_buffer
 		{
 			m_begin -= m_size;
 		}
+		if (!m_datasize)
+		{
+			m_begin = 0;
+			m_end = 0;
+		}
 	}
 	bool read(char * out, size_t size)
 	{
