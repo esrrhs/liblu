@@ -8,7 +8,7 @@
 int loopnum = 0;
 int loopmax = 1000000;
 
-int on_conn_open(lu * l, int connid, luuserdata & userdata)
+void on_conn_open(lu * l, int connid, luuserdata & userdata)
 {
     printf("on_conn_open %d\n", connid);
     if (gettypelu(l) == lut_tcpserver)
@@ -17,10 +17,9 @@ int on_conn_open(lu * l, int connid, luuserdata & userdata)
         sprintf(s, "welcome %d", connid);
         sendlu(l, s, strlen(s) + 1, connid);
     }
-    return 0;
 }
 
-int on_conn_recv_packet(lu * l, int connid, const char * buff, size_t size, luuserdata & userdata)
+void on_conn_recv_packet(lu * l, int connid, const char * buff, size_t size, luuserdata & userdata)
 {
 #ifdef _DEBUG
     printf("on_conn_recv_packet %d %d : %s\n", connid, (int)size, buff);
@@ -29,10 +28,9 @@ int on_conn_recv_packet(lu * l, int connid, const char * buff, size_t size, luus
     sprintf(s, "hello i am connid %d", connid);
     sendlu(l, s, strlen(s) + 1, connid);
     loopnum++;
-    return 0;
 }
 
-int on_conn_close(lu * l, int connid, luuserdata & userdata, int reason)
+void on_conn_close(lu * l, int connid, luuserdata & userdata, int reason)
 {
 #ifdef WIN32
 	char tmp[100];
@@ -43,7 +41,6 @@ int on_conn_close(lu * l, int connid, luuserdata & userdata, int reason)
 	printf("on_conn_close %d %d %s\n", connid, reason, strerror_r(reason, tmp, sizeof(tmp)));
 #endif
     loopnum = loopmax;
-    return 0;
 }
 
 int main(int argc, char *argv[])
