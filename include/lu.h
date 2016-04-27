@@ -53,10 +53,12 @@ struct luuserdata
     luuserdataparam params[LU_MAX_USER_DATA_PARAM];
 };
 
-// 回调
-typedef int (*cb_conn_open)(lu * l, int connid, luuserdata & userdata);
-typedef int (*cb_conn_recv_packet)(lu * l, int connid, const char * buff, size_t size, luuserdata & userdata);
-typedef int (*cb_conn_close)(lu * l, int connid, luuserdata & userdata, int reason);
+// 回调 连接成功或者新连接连入
+typedef void (*cb_conn_open)(lu * l, int connid, luuserdata & userdata);
+// 回调 数据到达
+typedef void(*cb_conn_recv_packet)(lu * l, int connid, const char * buff, size_t size, luuserdata & userdata);
+// 回调 连接关闭
+typedef void(*cb_conn_close)(lu * l, int connid, luuserdata & userdata, int reason);
 
 struct luconfig
 {
