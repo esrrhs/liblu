@@ -151,6 +151,6 @@ enum luerrortype
 };
 
 // ·¢ËÍÏûÏ¢
-LU_API int sendlu(lu * l, char * buffer, size_t size, int connid = -1);
+LU_API int sendlu(lu * l, const char * buffer, size_t size, int connid = -1);
 
 
