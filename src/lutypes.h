@@ -20,8 +20,8 @@
 #include <map>
 
 #ifdef _DEBUG
-#define LULOG(...) lulog("[DEBUG] ", __FILE__, __FUNCTION__, __LINE__, __VA_ARGS__);
-#define LUERR(...) lulog("[ERROR] ", __FILE__, __FUNCTION__, __LINE__, __VA_ARGS__);
+#define LULOG(...) //lulog("[DEBUG] ", __FILE__, __FUNCTION__, __LINE__, __VA_ARGS__);
+#define LUERR(...) //lulog("[ERROR] ", __FILE__, __FUNCTION__, __LINE__, __VA_ARGS__);
 #else
 #define LULOG(...)
 #define LUERR(...)
@@ -57,6 +57,13 @@ void luswap(T & left, T & right)
     T tmp = left;
     left = right;
     right = tmp;
+}
+
+static void luswap(const char * left, char * right)
+{
+	const char * tmp = left;
+	left = right;
+	right = (char *)tmp;
 }
 
 struct lu;

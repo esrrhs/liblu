@@ -912,7 +912,7 @@ size_t encrypt_key_hash(size_t i)
 	return ((size_t)_Qrem.rem);
 }
 
-bool encrypt_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
+bool encrypt_packet(const char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
 {
 	for (int i = 0; i < (int)size; i++)
 	{
@@ -949,7 +949,7 @@ enum compresstype
 
 #define COMPRESS_LEN_MAX 32
 
-bool docompress(char * buffer, size_t size, int i, char * obuffer, size_t & oldsize, size_t & osize)
+bool docompress(const char * buffer, size_t size, int i, char * obuffer, size_t & oldsize, size_t & osize)
 {
     do
     {
@@ -1250,7 +1250,7 @@ bool dodecompress(char * buffer, size_t size, int i, char * obuffer, size_t & ol
 	return true;
 }
 
-bool compress_packet(char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
+bool compress_packet(const char * buffer, size_t size, char * obuffer, size_t omaxsize, size_t & osize)
 {
 	char tmpbuff[sizeof(uint64_t)];
 	osize = 0;
@@ -1318,7 +1318,7 @@ bool decompress_packet(char * buffer, size_t size, char * obuffer, size_t omaxsi
 	return true;
 }
 
-int pack_packet(lu * l, circle_buffer * cb, int connid, char * buffer, size_t size)
+int pack_packet(lu * l, circle_buffer * cb, int connid, const char * buffer, size_t size)
 {
     if (size >= l->cfg.maxpacketlen)
     {
@@ -1334,7 +1334,7 @@ int pack_packet(lu * l, circle_buffer * cb, int connid, char * buffer, size_t si
         return luet_sendbufffull;
     }
     
-    char * srcbuffer = buffer;
+    const char * srcbuffer = buffer;
     size_t srcdatasize = size;
     char * destbuffer = l->recvpacketbuffer;
     size_t destdatasize = 0;
@@ -1400,7 +1400,7 @@ int pack_packet(lu * l, circle_buffer * cb, int connid, char * buffer, size_t si
     return luet_ok;
 }
 
-int sendtcpserver(lutcpserver * lts, char * buffer, size_t size, int connid)
+int sendtcpserver(lutcpserver * lts, const char * buffer, size_t size, int connid)
 {
     lu * l = lts->l;
     
@@ -1418,7 +1418,7 @@ int sendtcpserver(lutcpserver * lts, char * buffer, size_t size, int connid)
     return pack_packet(l, &ltl.sendbuff, ltl.index, buffer, size);
 }
 
-int sendtcpclient(lutcpclient * ltc, char * buffer, size_t size, int connid)
+int sendtcpclient(lutcpclient * ltc, const char * buffer, size_t size, int connid)
 {
     lu * l = ltc->ltl.l;
     lutcplink & ltl = ltc->ltl;
