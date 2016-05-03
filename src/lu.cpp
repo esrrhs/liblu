@@ -104,7 +104,7 @@ LU_API lutype gettypelu(lu * l)
     return l->type;
 }
 
-LU_API int sendlu(lu * l, char * buffer, size_t size, int connid)
+LU_API int sendlu(lu * l, const char * buffer, size_t size, int connid)
 {
 	if (l->type == lut_tcpserver)
 	{

@@ -132,10 +132,10 @@ void ticktcpclient(lutcpclient * ltc);
 void recv_tcpserver_packet(lutcpserver * lts);
 void recv_tcpclient_packet(lutcpclient * ltc);
 int unpack_packet(lu * l, circle_buffer * cb, int connid, luuserdata & userdata);
-int pack_packet(lu * l, circle_buffer * cb, int connid, char * buffer, size_t size);
+int pack_packet(lu * l, circle_buffer * cb, int connid, const char * buffer, size_t size);
 
-int sendtcpserver(lutcpserver * lts, char * buffer, size_t size, int connid);
-int sendtcpclient(lutcpclient * ltc, char * buffer, size_t size, int connid);
+int sendtcpserver(lutcpserver * lts, const char * buffer, size_t size, int connid);
+int sendtcpclient(lutcpclient * ltc, const char * buffer, size_t size, int connid);
 
 int on_tcpserver_err(lutcplink * ltl);
 int on_tcpserver_in(lutcplink * ltl, int & reason);
