@@ -18,6 +18,7 @@ LU_API lu * newlu(luconfig * cfg)
 	pl->luf = _cfg.luf;
 	pl->cfg = _cfg;
 	pl->type = _cfg.type;
+	pl->lud = _cfg.userdata;
 	if (pl->type == lut_tcpserver)
 	{
 		LULOG("new tcp server");
@@ -119,4 +120,9 @@ LU_API int sendlu(lu * l, const char * buffer, size_t size, int connid)
 		LUERR("error type %d", l->type);
 		return luet_typeerr;
 	}
+}
+
+LU_API luuserdata * getlu_userdata(lu * l)
+{
+	return &l->lud;
 }

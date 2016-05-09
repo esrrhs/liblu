@@ -119,6 +119,7 @@ struct lu
 	lutcpclient * tc;
 	char * recvpacketbuffer;
 	char * recvpacketbufferex;
+	luuserdata lud;
 };
 
 lutcpserver * newtcpserver(lu * l);

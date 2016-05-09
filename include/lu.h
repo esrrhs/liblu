@@ -117,6 +117,8 @@ struct luconfig
 	bool isencrypt;
 	// 是否压缩
 	bool iscompress;
+	// 绑定在lu上的用户数据
+	luuserdata userdata;
 };
 
 // 初始化
@@ -153,4 +155,5 @@ enum luerrortype
 // 发送消息
 LU_API int sendlu(lu * l, const char * buffer, size_t size, int connid = -1);
 
-
+// 用户数据
+LU_API luuserdata * getlu_userdata(lu * l);
