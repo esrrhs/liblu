@@ -126,3 +126,28 @@ LU_API luuserdata * getlu_userdata(lu * l)
 {
 	return &l->lud;
 }
+
+// 连接上的用户数据
+LU_API luuserdata * getlu_conn_userdata(lu * l, int connid)
+{
+	if (l->type == lut_tcpserver)
+	{
+		if (connid <= 0 || connid >= (int)l->ts->ltlsnum)
+		{
+			return 0;
+		}
+
+		lutcplink & ltl = l->ts->ltls[connid];
+		return &ltl.userdata;
+	}
+	else if (l->type == lut_tcpclient)
+	{
+		lutcplink & ltl = l->tc->ltl;
+		return &ltl.userdata;
+	}
+	else
+	{
+		LUERR("error type %d", l->type);
+		return 0;
+	}
+}
