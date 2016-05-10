@@ -157,3 +157,6 @@ LU_API int sendlu(lu * l, const char * buffer, size_t size, int connid = -1);
 
 // 用户数据
 LU_API luuserdata * getlu_userdata(lu * l);
+
+// 连接上的用户数据
+LU_API luuserdata * getlu_conn_userdata(lu * l, int connid = -1);
