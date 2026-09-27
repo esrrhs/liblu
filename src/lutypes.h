@@ -45,7 +45,7 @@
 #define LUERR(...)
 #endif
 
-void lulog(const char * header, const char * file, const char * func, int pos, const char *fmt, ...);
+void lulog(const char *header, const char *file, const char *func, int pos, const char *fmt, ...);
 
 #if defined(_WIN32)
 typedef SOCKET socket_t;
@@ -72,14 +72,13 @@ typedef int socket_t;
 #define LUMIN(a, b) ((a) < (b) ? (a) : (b))
 #define LUMAX(a, b) ((a) > (b) ? (a) : (b))
 
-template <typename T>
-void luswap(T & left, T & right)
-{
+template<typename T>
+void luswap(T &left, T &right) {
     T tmp = left;
     left = right;
     right = tmp;
 }
 
 struct lu;
-void * safelumalloc(lu * l, size_t len);
-void safelufree(lu * l, void * p);
+void *safelumalloc(lu *l, size_t len);
+void safelufree(lu *l, void *p);

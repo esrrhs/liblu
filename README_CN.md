@@ -66,24 +66,22 @@ Debug：
 ```cpp
 #include "lu.h"
 
-void on_conn_open(lu * l, int connid, luuserdata & userdata);
-void on_conn_recv_packet(lu * l, int connid, const char * buff, size_t size, luuserdata & userdata);
-void on_conn_close(lu * l, int connid, luuserdata & userdata, int reason);
+void on_conn_open(lu *l, int connid, luuserdata &userdata);
+void on_conn_recv_packet(lu *l, int connid, const char *buff, size_t size, luuserdata &userdata);
+void on_conn_close(lu *l, int connid, luuserdata &userdata, int reason);
 
-int main()
-{
+int main() {
     inilu();
 
     luconfig cfg;
-    cfg.type = lut_tcpserver;   // 或 lut_tcpclient
+    cfg.type = lut_tcpserver; // 或 lut_tcpclient
     cfg.port = 8888;
-    cfg.cco  = on_conn_open;
+    cfg.cco = on_conn_open;
     cfg.ccrp = on_conn_recv_packet;
-    cfg.ccc  = on_conn_close;
+    cfg.ccc = on_conn_close;
 
-    lu * l = newlu(&cfg);
-    while (/* running */)
-    {
+    lu *l = newlu(&cfg);
+    while (/* running */) {
         ticklu(l);
     }
     dellu(l);
@@ -93,7 +91,7 @@ int main()
 发送：
 
 ```cpp
-sendlu(l, buffer, size, connid);  // client 模式下 connid 可忽略
+sendlu(l, buffer, size, connid); // client 模式下 connid 可忽略
 ```
 
 ## 示例程序
