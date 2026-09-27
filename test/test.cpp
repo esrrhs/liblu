@@ -1,15 +1,22 @@
 #include "lu.h"
+
+#include <cstdio>
+#include <cstring>
 #include <iostream>
-#include <stdio.h>
-#ifndef WIN32
+#include <string>
+
+#if defined(LIBLU_USE_GPERFTOOLS) && !defined(_WIN32)
 #include "gperftools/profiler.h"
 #endif
+
+namespace {
 
 int loopnum = 0;
 int loopmax = 1000000;
 
 void on_conn_open(lu * l, int connid, luuserdata & userdata)
 {
+    (void)userdata;
     printf("on_conn_open %d\n", connid);
     if (gettypelu(l) == lut_tcpserver)
     {
@@ -21,6 +28,9 @@ void on_conn_open(lu * l, int connid, luuserdata & userdata)
 
 void on_conn_recv_packet(lu * l, int connid, const char * buff, size_t size, luuserdata & userdata)
 {
+    (void)buff;
+    (void)size;
+    (void)userdata;
 #ifdef _DEBUG
     printf("on_conn_recv_packet %d %d : %s\n", connid, (int)size, buff);
 #endif
@@ -32,31 +42,48 @@ void on_conn_recv_packet(lu * l, int connid, const char * buff, size_t size, luu
 
 void on_conn_close(lu * l, int connid, luuserdata & userdata, int reason)
 {
-#ifdef WIN32
-	char tmp[100];
-	strerror_s(tmp, reason);
-    printf("on_conn_close %d %d %s\n", connid, reason, tmp);
-#else
-	char tmp[100];
-	printf("on_conn_close %d %d %s\n", connid, reason, strerror_r(reason, tmp, sizeof(tmp)));
-#endif
+    (void)l;
+    (void)userdata;
+    printf("on_conn_close %d %d %s\n", connid, reason, strerror(reason));
     loopnum = loopmax;
 }
 
-int main(int argc, char *argv[])
+int run_smoke()
 {
-	if (argc <= 1)
-	{
-		std::cout<<"need arg: [server or client]"<<std::endl;
-		return 0;
-	}
+    inilu();
 
     luconfig cfg;
     cfg.cco = on_conn_open;
     cfg.ccrp = on_conn_recv_packet;
     cfg.ccc = on_conn_close;
-	
-    std::string name = argv[1];
+    cfg.type = lut_tcpserver;
+    cfg.port = 0;
+    strcpy(cfg.ip, "127.0.0.1");
+
+    lu * l = newlu(&cfg);
+    if (!l)
+    {
+        std::cerr << "smoke: newlu failed\n";
+        return 1;
+    }
+
+    for (int i = 0; i < 10; ++i)
+    {
+        ticklu(l);
+    }
+
+    dellu(l);
+    std::cout << "smoke ok\n";
+    return 0;
+}
+
+int run_role(const std::string & name)
+{
+    luconfig cfg;
+    cfg.cco = on_conn_open;
+    cfg.ccrp = on_conn_recv_packet;
+    cfg.ccc = on_conn_close;
+
     if (name == "server")
     {
         cfg.type = lut_tcpserver;
@@ -67,41 +94,54 @@ int main(int argc, char *argv[])
     }
     else
     {
-		std::cout<<"need arg: [server or client]"<<std::endl;
-		return 0;
+        std::cout << "need arg: [server|client|smoke]\n";
+        return 1;
     }
 
-	inilu();
-	lu * l = newlu(&cfg);
+    inilu();
+    lu * l = newlu(&cfg);
     if (!l)
     {
-		std::cout<<"new lu fail"<<std::endl;
-		return 0;
+        std::cout << "new lu fail\n";
+        return 1;
     }
-    
-#ifndef WIN32
-#ifndef _DEBUG
-	ProfilerStart(((std::string)"test_" + name + ".prof").c_str());
+
+#if defined(LIBLU_USE_GPERFTOOLS) && !defined(_WIN32) && !defined(_DEBUG)
+    ProfilerStart(("test_" + name + ".prof").c_str());
 #endif
-#endif
+
 #ifdef _DEBUG
     while (1)
 #else
     while (loopnum < loopmax)
 #endif
-	{
-	    ticklu(l);
-	}
-#ifndef WIN32
-#ifndef _DEBUG
-	ProfilerStop();
+    {
+        ticklu(l);
+    }
+
+#if defined(LIBLU_USE_GPERFTOOLS) && !defined(_WIN32) && !defined(_DEBUG)
+    ProfilerStop();
 #endif
-#endif
-	
-	dellu(l);
-	
-	std::cout<<"finish"<<std::endl;
-	char c;
-	std::cin >> c;
-	return 0;
+
+    dellu(l);
+    std::cout << "finish\n";
+    return 0;
+}
+
+} // namespace
+
+int main(int argc, char * argv[])
+{
+    if (argc <= 1)
+    {
+        std::cout << "need arg: [server|client|smoke]\n";
+        return 1;
+    }
+
+    std::string name = argv[1];
+    if (name == "smoke")
+    {
+        return run_smoke();
+    }
+    return run_role(name);
 }
