@@ -1,29 +1,32 @@
-#! /bin/sh
+#!/usr/bin/env bash
+set -euo pipefail
 
-BUILD_FLAG=""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUILD_DIR="${SCRIPT_DIR}/build"
+BUILD_TYPE="${1:-Release}"
 
-if [ $# == 1 ] && [ $1 == "release" ];then
-    BUILD_FLAG=" -DREMOD=ON"
-fi
+case "${BUILD_TYPE}" in
+    Release|release)
+        BUILD_TYPE="Release"
+        ;;
+    Debug|debug)
+        BUILD_TYPE="Debug"
+        ;;
+    *)
+        echo "usage: $0 [Release|Debug]"
+        exit 1
+        ;;
+esac
 
-#lib
-rm CMakeCache.txt -rf
-rm CMakeFiles -rf
-rm cmake_install.cmake -rf
-rm Makefile -rf
-cmake . $BUILD_FLAG
-make clean
-make -j5
+echo "==> Configuring liblu (${BUILD_TYPE})..."
+cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
 
-#test
-cd test
-rm CMakeCache.txt -rf
-rm CMakeFiles -rf
-rm cmake_install.cmake -rf
-rm Makefile -rf
-cmake . $BUILD_FLAG
-make clean
-make -j5
-cd ..
+echo "==> Building liblu..."
+cmake --build "${BUILD_DIR}" --config "${BUILD_TYPE}" -j"$(nproc 2>/dev/null || echo 2)"
 
-echo "build ok"
+echo "==> Running smoke test..."
+ctest --test-dir "${BUILD_DIR}" --output-on-failure -C "${BUILD_TYPE}"
+
+echo "==> Build successful"
+echo "    library: ${BUILD_DIR}/bin/liblu.a"
+echo "    test:    ${BUILD_DIR}/bin/lu_test"

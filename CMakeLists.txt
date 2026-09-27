@@ -1,18 +1,50 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+cmake_minimum_required(VERSION 3.12)
+project(liblu LANGUAGES CXX)
 
-PROJECT(LU)
-AUX_SOURCE_DIRECTORY(./src LU_SRC_LIST)
-INCLUDE_DIRECTORIES(./include)
-INCLUDE_DIRECTORIES(./src)
-MESSAGE(STATUS "This is cmdcontroller BINARY dir " ${LU_BINARY_DIR})
-MESSAGE(STATUS "This is cmdcontroller SOURCE dir " ${LU_SOURCE_DIR})
-MESSAGE(STATUS "This is cmdcontroller SOURCE file " ${LU_SRC_LIST})
-IF(REMOD)
-SET(CMAKE_CXX_FLAGS "-O3 -Wall -Werror -gdwarf-2 -m64 -DNDEBUG")
-MESSAGE("build release lib")
-ELSE()
-SET(CMAKE_CXX_FLAGS "-g3 -O0 -Wall -Werror -gdwarf-2 -m64 -D_DEBUG")
-MESSAGE("build debug lib")
-ENDIF()
-SET(LIBRARY_OUTPUT_PATH ${LU_BINARY_DIR}/bin)
-ADD_LIBRARY(lu STATIC ${LU_SRC_LIST})
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+include(GNUInstallDirs)
+
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+option(LIBLU_BUILD_TESTS "Build example / smoke test binary" ON)
+option(LIBLU_USE_GPERFTOOLS "Link gperftools profiler into the test binary" OFF)
+
+find_package(Threads REQUIRED)
+
+add_library(lu STATIC
+    src/lu.cpp
+    src/lutypes.cpp
+    src/lusocket.cpp
+)
+
+target_include_directories(lu
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_compile_options(lu PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall>
+)
+
+target_link_libraries(lu PUBLIC Threads::Threads)
+
+if(WIN32)
+    target_link_libraries(lu PUBLIC ws2_32)
+endif()
+
+if(LIBLU_BUILD_TESTS)
+    add_subdirectory(test)
+    enable_testing()
+    add_test(
+        NAME lu_smoke
+        COMMAND $<TARGET_FILE:lu_test> smoke
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    )
+endif()
