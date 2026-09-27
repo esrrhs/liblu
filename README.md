@@ -66,24 +66,22 @@ Artifacts in `build/bin/`:
 ```cpp
 #include "lu.h"
 
-void on_conn_open(lu * l, int connid, luuserdata & userdata);
-void on_conn_recv_packet(lu * l, int connid, const char * buff, size_t size, luuserdata & userdata);
-void on_conn_close(lu * l, int connid, luuserdata & userdata, int reason);
+void on_conn_open(lu *l, int connid, luuserdata &userdata);
+void on_conn_recv_packet(lu *l, int connid, const char *buff, size_t size, luuserdata &userdata);
+void on_conn_close(lu *l, int connid, luuserdata &userdata, int reason);
 
-int main()
-{
+int main() {
     inilu();
 
     luconfig cfg;
-    cfg.type = lut_tcpserver;   // or lut_tcpclient
+    cfg.type = lut_tcpserver; // or lut_tcpclient
     cfg.port = 8888;
-    cfg.cco  = on_conn_open;
+    cfg.cco = on_conn_open;
     cfg.ccrp = on_conn_recv_packet;
-    cfg.ccc  = on_conn_close;
+    cfg.ccc = on_conn_close;
 
-    lu * l = newlu(&cfg);
-    while (/* running */)
-    {
+    lu *l = newlu(&cfg);
+    while (/* running */) {
         ticklu(l);
     }
     dellu(l);
@@ -93,7 +91,7 @@ int main()
 Send:
 
 ```cpp
-sendlu(l, buffer, size, connid);  // connid ignored in client mode
+sendlu(l, buffer, size, connid); // connid ignored in client mode
 ```
 
 ## Example binary

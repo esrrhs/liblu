@@ -3,81 +3,68 @@
 #include "lutypes.h"
 
 struct lu;
-template <typename T>
-struct lustack
-{
-    void ini(lu * _l, size_t len)
-    {
+
+template<typename T>
+struct lustack {
+    void ini(lu *_l, size_t len) {
         l = _l;
         N = len;
-        data = (T*)safelumalloc(l, sizeof(T) * len);
-		used = 0;
+        data = (T *) safelumalloc(l, sizeof(T) * len);
+        used = 0;
     }
 
-    void fini()
-    {
+    void fini() {
         safelufree(l, data);
     }
-    
-	void clear()
-	{
-		used = 0;
-	}
 
-	bool pop(T & t)
-	{
-		if (empty())
-		{
-			return false;
-		}
-		t = data[used - 1];
-		used--;
-		return true;
-	}
+    void clear() {
+        used = 0;
+    }
 
-	bool push(const T & t)
-	{
-		if (full())
-		{
-			return false;
-		}
+    bool pop(T &t) {
+        if (empty()) {
+            return false;
+        }
+        t = data[used - 1];
+        used--;
+        return true;
+    }
 
-		data[used] = t;
-		used++;
+    bool push(const T &t) {
+        if (full()) {
+            return false;
+        }
 
-		return true;
-	}
+        data[used] = t;
+        used++;
 
-	uint32_t size() const
-	{
-		return used;
-	}
+        return true;
+    }
 
-	bool empty() const
-	{
-		return used == 0;
-	}
+    uint32_t size() const {
+        return used;
+    }
 
-	bool full() const
-	{
-		return used == N;
-	}
-	
-	T& operator [](uint32_t index)
-	{
-		assert(index < N);
-		return data[index];
-	}
+    bool empty() const {
+        return used == 0;
+    }
 
-	const T& operator [](uint32_t index) const
-	{
-		assert(index < N);
-		return data[index];
-	}
+    bool full() const {
+        return used == N;
+    }
 
-    lu * l;
-	T * data;
-	size_t N;
-	uint32_t used;
+    T &operator[](uint32_t index) {
+        assert(index < N);
+        return data[index];
+    }
+
+    const T &operator[](uint32_t index) const {
+        assert(index < N);
+        return data[index];
+    }
+
+    lu *l;
+    T *data;
+    size_t N;
+    uint32_t used;
 };
-
